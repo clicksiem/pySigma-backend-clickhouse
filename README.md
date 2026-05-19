@@ -20,8 +20,8 @@ To implement this Clickhouse backend I have leanerd a lot of code, and this is m
 
 Created an maintaned by `souzo`
 
-[https://github.com/souzomain](https://github.com/souzomain)
-[https://medium.com/@souzo](https://medium.com/@souzo)
+- [https://github.com/souzomain](https://github.com/souzomain)
+- [https://medium.com/@souzo](https://medium.com/@souzo)
 
 # Dev
 
