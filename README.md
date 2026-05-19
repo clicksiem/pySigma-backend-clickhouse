@@ -1,14 +1,6 @@
-## WARNING
-
-This project is under development and does not provide a production ready implementation.
-
 # pySigma Clickhouse Backend
 
 This is the Clickhouse backend for pySigma. It provides the package `sigma.backends.clickhouse` with the `ClickhouseBackend` class.
-
-Further it contains the following processing pipelines under `sigma.pipelines.clickhouse`:
-* clickhouse_wazuh_pipeline
-* clickhouse_logstash_pipeline
 
 It supports the following output formats for Sigma rules:
 * `default`: plain clickhouse SQL querie
