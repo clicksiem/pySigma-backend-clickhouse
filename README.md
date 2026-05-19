@@ -1,3 +1,7 @@
+## Warning
+
+This is not production ready, be careful.
+
 # pySigma Clickhouse Backend
 
 This is the Clickhouse backend for pySigma. It provides the package `sigma.backends.clickhouse` with the `ClickhouseBackend` class.

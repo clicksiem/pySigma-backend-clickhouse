@@ -11,7 +11,7 @@ dependencies = [
     "sigma-cli>=3.0.2",
 ]
 authors = [
-    { name = "souzo" }
+    { name = "souzo", email = "me@souzo.me" }
 ]
 
 [tool.pytest.ini_options]
