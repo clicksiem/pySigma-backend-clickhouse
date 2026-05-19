@@ -1,0 +1,19 @@
+[project]
+name = "pysigma-backend-clickhouse"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pysigma>=1.3.3",
+    "pytest>=9.0.3",
+    "sigma-cli>=3.0.2",
+]
+authors = [
+    { name = "souzo" }
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "."
+]
