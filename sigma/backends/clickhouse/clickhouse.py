@@ -1,516 +1,271 @@
-from collections import defaultdict
-from typing import Any, ClassVar, Dict, Union
-from sigma.conversion.base import TextQueryBackend
 from sigma.conversion.deferred import DeferredQueryExpression
 from sigma.conversion.state import ConversionState
+from sigma.exceptions import SigmaFeatureNotSupportedByBackendError
+from sigma.rule import SigmaRule
+from sigma.conversion.base import TextQueryBackend
 from sigma.conditions import (
-    ConditionFieldEqualsValueExpression,
     ConditionItem,
     ConditionAND,
-    ConditionNOT,
     ConditionOR,
+    ConditionNOT,
+    ConditionValueExpression,
+    ConditionFieldEqualsValueExpression,
 )
 from sigma.types import (
-    CompareOperators,
-    SigmaRegularExpressionFlag,
-    SigmaRegularExpression,
+    SigmaCompareExpression,
+    SigmaString,
     SpecialChars,
+    SigmaCIDRExpression,
     TimestampPart,
 )
-from sigma.correlations import SigmaCorrelationConditionOperator
-from sigma.processing.pipeline import ProcessingPipeline
-from sigma.rule import SigmaRule
-from sigma.exceptions import SigmaError
+from sigma.correlations import (
+    SigmaCorrelationConditionOperator,
+    SigmaCorrelationRule,
+    SigmaCorrelationTypeLiteral,
+)
+
 import re
+import yaml
+from typing import ClassVar, Dict, List, Optional, Pattern, Tuple, Union, Any
 
 
 class ClickhouseBackend(TextQueryBackend):
-    name: ClassVar[str] = "Clickhouse backend"
+    """ClickHouse backend."""
+
+    name: ClassVar[str] = "ClickHouse backend"
     formats: ClassVar[Dict[str, str]] = {
-        "default": "Plain SQL",
-        "clickdetect": "Clickdetect rule format",
+        "default": "Plain ClickHouse SQL queries",
+        "clickdetect": "ClickDetect rule format",
+    }
+    requires_pipeline: ClassVar[bool] = False
+
+    correlation_methods: ClassVar[Dict[str, str]] = {
+        "default": "Default ClickHouse correlation using subqueries and aggregate functions",
     }
 
-    requires_pipeline: ClassVar[bool] = (
-        False  # Does the backend requires that a processing pipeline is provided?
-    )
-
-    # Backends can offer different methods of correlation query generation. That are described by
-    # correlation_methods:
-    correlation_methods: ClassVar[dict[str, str] | None] = None
-    # The following class variable defines the default method that should be chosen if none is provided.
-    default_correlation_method: ClassVar[str] = "default"
-
-    processing_pipeline: ProcessingPipeline | None
-    last_processing_pipeline: ProcessingPipeline
-    backend_processing_pipeline: ClassVar[ProcessingPipeline] = ProcessingPipeline()
-    output_format_processing_pipeline: ClassVar[dict[str, ProcessingPipeline]] = (
-        defaultdict(ProcessingPipeline)
-    )
-    default_format: ClassVar[str] = "default"
-    collect_errors: bool = False
-    errors: list[tuple[SigmaRule, SigmaError]]
-
-    # Perform finalization on all queries used in a correl
-    finalize_correlation_subqueries = False
-
-    # in-expressions
-    convert_or_as_in: ClassVar[bool] = False  # Convert OR as in-expression
-    convert_and_as_in: ClassVar[bool] = False  # Convert AND as in-expression
-    in_expressions_allow_wildcards: ClassVar[bool] = (
-        False  # Values in list can contain wildcards. If set to False (default) only plain values are converted into in-expressions.
-    )
-
-    # not exists: convert as "not exists-expression" or as dedicated expression
-    explicit_not_exists_expression: ClassVar[bool] = False
-
-    # use not_eq_token, not_eq_expression, etc. to implement != as a separate expression instead of not_token in ConditionNOT
-    convert_not_as_not_eq: ClassVar[bool] = False
-
-    # Return value for empty AND and OR expressions
-    empty_or_expression: ClassVar[str | None] = (
-        None  # Value returned when OR expression has no arguments
-    )
-    empty_and_expression: ClassVar[str | None] = (
-        None  # Value returned when AND expression has no arguments
-    )
-    precedence: ClassVar[
-        tuple[type[ConditionItem], type[ConditionItem], type[ConditionItem]]
-    ] = (
+    precedence: ClassVar[Tuple[ConditionItem, ConditionItem, ConditionItem]] = (
         ConditionNOT,
         ConditionAND,
         ConditionOR,
     )
-    group_expression: ClassVar[str | None] = "{{expr}}"
+    parenthesize: bool = True
+    group_expression: ClassVar[str] = "({expr})"
 
-    parenthesize: bool = False  # Reflect parse tree by putting parenthesis around all expressions - use this for target systems without strict precedence rules.
-
-    # Generated query tokens
-    token_separator: str = " "  # separator inserted between all boolean operators
+    token_separator: str = " "
     or_token: ClassVar[str] = "OR"
     and_token: ClassVar[str] = "AND"
     not_token: ClassVar[str] = "NOT"
     eq_token: ClassVar[str] = "="
-    not_eq_token: ClassVar[str | None] = (
-        None  # Token inserted between field and value (without separator) if using not_eq_expression over not_token
-    )
-    eq_expression: ClassVar[str] = (
-        "{field}{backend.eq_token}{value}"  # Expression for field = value
-    )
-    not_eq_expression: ClassVar[str] = (
-        "{field}{backend.not_eq_token}{value}"  # Expression for field != value
-    )
 
-    # Query structure
-    # The generated query can be embedded into further structures. One common example are data
-    # source commands that are prepended to the matching condition and specify data repositories or
-    # tables from which the data is queried.
-    # This is specified as format string that contains the following placeholders:
-    # * {query}: The generated query
-    # * {rule}: The Sigma rule from which the query was generated
-    # * {state}: Conversion state at the end of query generation. This state is initialized with the
-    #   pipeline state.
-    query_expression: ClassVar[str] = "{query}"
-    # The following dict defines default values for the conversion state. They are used if
-    # the respective state is not set.
-    state_defaults: ClassVar[dict[str, str]] = dict()
+    # ClickHouse quotes identifiers with backticks (same as MySQL)
+    field_quote: ClassVar[str] = "`"
+    field_quote_pattern: ClassVar[Pattern] = re.compile("^[a-zA-Z0-9_]*$")
+    field_quote_pattern_negation: ClassVar[bool] = True
 
-    # String output
-    ## Fields
-    ### Quoting
-    field_quote: ClassVar[str | None] = (
-        None  # Character used to quote field characters if field_quote_pattern matches (or not, depending on field_quote_pattern_negation). No field name quoting is done if not set.
-    )
-    field_quote_pattern: ClassVar[re.Pattern[str] | None] = (
-        None  # Quote field names if this pattern (doesn't) matches, depending on field_quote_pattern_negation. Field name is always quoted if pattern is not set.
-    )
-    field_quote_pattern_negation: ClassVar[bool] = (
-        True  # Negate field_quote_pattern result. Field name is quoted if pattern doesn't matches if set to True (default).
-    )
-
-    ### Escaping
-    field_escape: ClassVar[str | None] = (
-        None  # Character to escape particular parts defined in field_escape_pattern.
-    )
-    field_escape_quote: ClassVar[bool] = (
-        True  # Escape quote string defined in field_quote
-    )
-    field_escape_pattern: ClassVar[re.Pattern[str] | None] = (
-        None  # All matches of this pattern are prepended with the string contained in field_escape.
-    )
-
-    # Characters to escape in addition in regular expression representation of string (regex
-    # template variable) to default escaping characters.
-    add_escaped_re: ClassVar[str] = ""
-
-    ## Values
-    ### String quoting
-    str_quote: ClassVar[str] = (
-        "'"  # string quoting character (added as escaping character)
-    )
-    str_quote_pattern: ClassVar[re.Pattern[str] | None] = (
-        None  # Quote string values that match (or don't match) this pattern
-    )
-    str_quote_pattern_negation: ClassVar[bool] = True  # Negate str_quote_pattern result
-    ### String escaping and filtering
-    escape_char: ClassVar[str | None] = (
-        "\\"  # Escaping character for special characters inside string
-    )
-
-    # TODO: revise this
-    wildcard_multi: ClassVar[str | None] = (
-        "%"  # Character used as multi-character wildcard
-    )
-
-    # TODO: revise this
-    wildcard_single: ClassVar[str | None] = (
-        "_"  # Character used as single-character wildcard
-    )
-    # TODO: revise this
-    add_escaped: ClassVar[str] = (
-        "\\"  # Characters quoted in addition to wildcards and string quote
-    )
-    filter_chars: ClassVar[str] = ""  # Characters filtered
-    ### Booleans
-    bool_values: ClassVar[
-        dict[bool, str | None]
-    ] = {  # Values to which boolean values are mapped.
-        True: None,
-        False: None,
+    str_quote: ClassVar[str] = "'"
+    escape_char: ClassVar[str] = "\\"
+    wildcard_multi: ClassVar[str] = "%"
+    wildcard_single: ClassVar[str] = "_"
+    add_escaped: ClassVar[str] = "\\"
+    bool_values: ClassVar[Dict[bool, str]] = {
+        True: "true",
+        False: "false",
     }
 
-    # String matching operators. if none is appropriate eq_token (or not_eq_token) is used.
-    startswith_expression: ClassVar[str | None] = "{field} LIKE '{value}%'"
-    not_startswith_expression: ClassVar[str | None] = "{field} NOT LIKE '{value}%'"
-    startswith_expression_allow_special: ClassVar[bool] = False
-    endswith_expression: ClassVar[str | None] = "{field} LIKE '%{value}'"
-    not_endswith_expression: ClassVar[str | None] = "{field} NOT LIKE '%{value}'"
-    endswith_expression_allow_special: ClassVar[bool] = False
-    contains_expression: ClassVar[str | None] = "{field} LIKE '%{value}%'"
-    not_contains_expression: ClassVar[str | None] = "{field} NOT LIKE '%{value}%'"
-    contains_expression_allow_special: ClassVar[bool] = False
-    wildcard_match_expression: ClassVar[str | None] = (
-        None  # Special expression if wildcards can't be matched with the eq_token operator.
-    )
+    # ClickHouse ILIKE is case-insensitive (Sigma default), LIKE is case-sensitive.
+    # No ESCAPE keyword needed; backslash is the default escape character.
+    startswith_expression: ClassVar[str] = "{field} ILIKE '{value}%'"
+    endswith_expression: ClassVar[str] = "{field} ILIKE '%{value}'"
+    contains_expression: ClassVar[str] = "{field} ILIKE '%{value}%'"
+    wildcard_match_expression: ClassVar[str] = "{field} ILIKE '{value}'"
 
-    # Regular expressions
-    # Regular expression query as format string with placeholders {field}, {regex}, {flag_x} where x
-    # is one of the flags shortcuts supported by Sigma (currently i, m and s) and refers to the
-    # token stored in the class variable re_flags.
-    re_expression: ClassVar[str | None] = None
-    not_re_expression: ClassVar[str | None] = None
-    re_escape_char: ClassVar[str] = (
-        "\\"  # Character used for escaping in regular expressions
-    )
-    re_escape: ClassVar[list[str]] = []  # List of strings that are escaped
-    re_escape_escape_char: bool = True  # If True, the escape character is also escaped
-    re_flag_prefix: bool = True  # If True, the flags are prepended as (?x) group at the beginning of the regular expression, e.g. (?i). If this is not supported by the target, it should be set to False.
-    # Mapping from SigmaRegularExpressionFlag values to static string templates that are used in
-    # flag_x placeholders in re_expression template.
-    # By default, i, m and s are defined. If a flag is not supported by the target query language,
-    # remove it from re_flags or don't define it to ensure proper error handling in case of appearance.
-    re_flags: dict[SigmaRegularExpressionFlag, str] = (
-        SigmaRegularExpression.sigma_to_re_flag
-    )
+    # Field existence
+    field_exists_expression: ClassVar[str] = "isNotNull({field})"
+    field_not_exists_expression: ClassVar[str] = "isNull({field})"
 
-    # Case sensitive string matching expression. String is quoted/escaped like a normal string.
-    # Placeholders {field} and {value} are replaced with field name and quoted/escaped string.
-    # {regex} contains the value expressed as regular expression.
-    case_sensitive_match_expression: ClassVar[str | None] = None
-    # Case sensitive string matching operators similar to standard string matching. If not provided,
-    # case_sensitive_match_expression is used.
-    case_sensitive_startswith_expression: ClassVar[str | None] = None
-    case_sensitive_not_startswith_expression: ClassVar[str | None] = None
-    case_sensitive_startswith_expression_allow_special: ClassVar[bool] = False
-    case_sensitive_endswith_expression: ClassVar[str | None] = None
-    case_sensitive_not_endswith_expression: ClassVar[str | None] = None
-    case_sensitive_endswith_expression_allow_special: ClassVar[bool] = False
-    case_sensitive_contains_expression: ClassVar[str | None] = None
-    case_sensitive_not_contains_expression: ClassVar[str | None] = None
-    case_sensitive_contains_expression_allow_special: ClassVar[bool] = False
+    # Regular expressions use match() in ClickHouse
+    re_expression: ClassVar[str] = "match({field}, '{regex}')"
+    re_escape_char: ClassVar[str] = ""
+    re_escape: ClassVar[Tuple[str, ...]] = ()
+    re_escape_escape_char: bool = True
+    re_flag_prefix: bool = True
 
-    # CIDR expressions: define CIDR matching if backend has native support. Else pySigma expands
-    # CIDR values into string wildcard matches.
-    cidr_expression: ClassVar[str | None] = (
-        None  # CIDR expression query as format string with placeholders {field}, {value} (the whole CIDR value), {network} (network part only), {prefixlen} (length of network mask prefix) and {netmask} (CIDR network mask only)
-    )
-    not_cidr_expression: ClassVar[str | None] = None
+    # Case-sensitive: LIKE is case-sensitive in ClickHouse for ASCII.
+    # Fallback uses match() regex which is always case-sensitive.
+    case_sensitive_startswith_expression: ClassVar[Optional[str]] = None
+    case_sensitive_endswith_expression: ClassVar[Optional[str]] = None
+    case_sensitive_contains_expression: ClassVar[Optional[str]] = None
+    case_sensitive_match_expression: ClassVar[str] = "match({field}, '{regex}')"
 
-    # Numeric comparison operators
-    compare_op_expression: ClassVar[str | None] = (
-        "{field} {operator} {value}"  # Compare operation query as format string with placeholders {field}, {operator} and {value}
-    )
+    # CIDR: ClickHouse has native isIPAddressInRange()
+    cidr_expression: ClassVar[str] = "isIPAddressInRange({field}, '{value}')"
 
-    # Mapping between CompareOperators elements and strings used as replacement for {operator} in compare_op_expression
-    compare_operators: ClassVar[dict[CompareOperators, str] | None] = {
-        CompareOperators.LT: "<",
-        CompareOperators.LTE: "<=",
-        CompareOperators.GT: ">",
-        CompareOperators.GTE: ">=",
-        CompareOperators.NEQ: "!=",
+    compare_op_expression: ClassVar[str] = "{field} {operator} {value}"
+    compare_operators: ClassVar[Dict[SigmaCompareExpression.CompareOperators, str]] = {
+        SigmaCompareExpression.CompareOperators.LT: "<",
+        SigmaCompareExpression.CompareOperators.LTE: "<=",
+        SigmaCompareExpression.CompareOperators.GT: ">",
+        SigmaCompareExpression.CompareOperators.GTE: ">=",
+        SigmaCompareExpression.CompareOperators.NEQ: "!=",
     }
 
-    # Expression for comparing two event fields
-    # Field comparison expression with the placeholders {field1} and {field2} corresponding to left field and right value side of Sigma detection item
-    field_equals_field_expression: ClassVar[str | None] = None  # "{field1} = {field2}"
-    field_equals_field_startswith_expression: ClassVar[str | None] = None
-    field_equals_field_endswith_expression: ClassVar[str | None] = None
-    field_equals_field_contains_expression: ClassVar[str | None] = None
+    field_equals_field_expression: ClassVar[Optional[str]] = "{field1}={field2}"
+    field_equals_field_startswith_expression: ClassVar[Optional[str]] = (
+        "{field1} ILIKE {field2} || '%'"
+    )
+    field_equals_field_endswith_expression: ClassVar[Optional[str]] = (
+        "{field1} ILIKE '%' || {field2}"
+    )
+    field_equals_field_contains_expression: ClassVar[Optional[str]] = (
+        "{field1} ILIKE '%' || {field2} || '%'"
+    )
+    field_equals_field_escaping_quoting: Tuple[bool, bool] = (True, True)
 
-    field_timestamp_part_expression: ClassVar[str | None] = None
-    """Expression for timestamp part modifiers like |minute, |day, etc."""
+    # ClickHouse timestamp functions: toHour(), toMinute(), toDayOfMonth(), etc.
+    field_timestamp_part_expression: ClassVar[Optional[str]] = (
+        "{timestamp_part}({field})"
+    )
+    timestamp_part_mapping: ClassVar[Optional[Dict[TimestampPart, str]]] = {
+        TimestampPart.MINUTE: "toMinute",
+        TimestampPart.HOUR: "toHour",
+        TimestampPart.DAY: "toDayOfMonth",
+        TimestampPart.WEEK: "toISOWeek",
+        TimestampPart.MONTH: "toMonth",
+        TimestampPart.YEAR: "toYear",
+    }
 
-    timestamp_part_mapping: ClassVar[dict[TimestampPart, str] | None] = None
-    """Mapping to map a TimestampPart enum value to it's string representation of the target SIEM. Example value: '%M' for minute."""
+    field_null_expression: ClassVar[str] = "isNull({field})"
 
-    field_equals_field_escaping_quoting: tuple[bool, bool] = (
-        True,
-        True,
-    )  # If regular field-escaping/quoting is applied to field1 and field2. A custom escaping/quoting can be implemented in the convert_condition_field_eq_field_escape_and_quote method.
+    convert_or_as_in: ClassVar[bool] = False
+    convert_and_as_in: ClassVar[bool] = False
+    in_expressions_allow_wildcards: ClassVar[bool] = False
+    field_in_list_expression: ClassVar[str] = "{field} {op} ({list})"
+    or_in_operator: ClassVar[str] = "IN"
+    list_separator: ClassVar[str] = ", "
 
-    # Null/None expressions
-    field_null_expression: ClassVar[str | None] = (
-        None  # Expression for field has null value as format string with {field} placeholder for field name
-    )
+    deferred_start: ClassVar[str] = ""
+    deferred_separator: ClassVar[str] = ""
+    deferred_only_query: ClassVar[str] = ""
 
-    # Field existence condition expressions.
-    field_exists_expression: ClassVar[str | None] = (
-        "{field} IS NOT NULL"  # Expression for field existence as format string with {field} placeholder for field name
-    )
-    field_not_exists_expression: ClassVar[str | None] = (
-        "{field} IS NULL"  # Expression for field non-existence as format string with {field} placeholder for field name. If not set, field_exists_expression is negated with boolean NOT.
-    )
+    # ========== Correlation Rule Templates ==========
 
-    # Field value in list, e.g. "field in (value list)" or "field containsall (value list)"
-    field_in_list_expression: ClassVar[str | None] = (
-        "{field} {op} {{list}}"  # Expression for field in list of values as format string with placeholders {field}, {op} and {list}
+    correlation_search_single_rule_expression: ClassVar[Optional[str]] = (
+        "SELECT * FROM logs WHERE {query}{normalization}"
     )
-    or_in_operator: ClassVar[str | None] = (
-        "IN"  # Operator used to convert OR into in-expressions. Must be set if convert_or_as_in is set
+    correlation_search_multi_rule_expression: ClassVar[Optional[str]] = "{queries}"
+    correlation_search_multi_rule_query_expression: ClassVar[Optional[str]] = (
+        "SELECT *, '{ruleid}' AS sigma_rule_id FROM logs WHERE {query}{normalization}"
     )
-    and_in_operator: ClassVar[str | None] = (
-        None  # Operator used to convert AND into in-expressions. Must be set if convert_and_as_in is set
-    )
-    list_separator: ClassVar[str | None] = None  # List element separator
-
-    # Value not bound to a field
-    unbound_value_str_expression: ClassVar[str | None] = (
-        None  # Expression for string value not bound to a field as format string with placeholder {value} and {regex} (value as regular expression)
-    )
-    unbound_value_num_expression: ClassVar[str | None] = (
-        None  # Expression for number value not bound to a field as format string with placeholder {value} and {regex} (value as regular expression)
-    )
-    unbound_value_re_expression: ClassVar[str | None] = (
-        None  # Expression for regular expression not bound to a field as format string with placeholder {value} and {flag_x} as described for re_expression
+    correlation_search_multi_rule_query_expression_joiner: ClassVar[Optional[str]] = (
+        " UNION ALL "
     )
 
-    # Query finalization: appending and concatenating deferred query part
-    deferred_start: ClassVar[str | None] = (
-        ""  # String used as separator between main query and deferred parts
+    correlation_search_field_normalization_expression: ClassVar[Optional[str]] = (
+        "{field} AS {alias}"
     )
-    deferred_separator: ClassVar[str | None] = (
-        ""  # String used to join multiple deferred query parts
-    )
-    deferred_only_query: ClassVar[str] = (
-        ""  # String used as query if final query only contains deferred expression
-    )
+    correlation_search_field_normalization_expression_joiner: ClassVar[
+        Optional[str]
+    ] = ", "
 
-    ### Correlation rule templates
-    ## Correlation query frame
-    # The correlation query frame is the basic structure of a correlation query for each correlation
-    # type. It contains the following placeholders:
-    # * {search} is the search expression generated by the correlation query search phase.
-    # * {typing} is the event typing expression generated by the correlation query typing phase.
-    # * {aggregate} is the aggregation expression generated by the correlation query aggregation
-    #   phase.
-    # * {condition} is the condition expression generated by the correlation query condition phase.
-    # If a correlation query template for a specific correlation type is not defined, the default correlation query template is used.
-    default_correlation_query: ClassVar[dict[str, str] | None] = None
-    event_count_correlation_query: ClassVar[dict[str, str] | None] = None
-    value_count_correlation_query: ClassVar[dict[str, str] | None] = None
-    temporal_correlation_query: ClassVar[dict[str, str] | None] = None
-    temporal_ordered_correlation_query: ClassVar[dict[str, str] | None] = None
-    temporal_extended_correlation_query: ClassVar[dict[str, str] | None] = None
-    temporal_ordered_extended_correlation_query: ClassVar[dict[str, str] | None] = None
-    value_sum_correlation_query: ClassVar[dict[str, str] | None] = None
-    value_avg_correlation_query: ClassVar[dict[str, str] | None] = None
-    value_percentile_correlation_query: ClassVar[dict[str, str] | None] = None
-    value_median_correlation_query: ClassVar[dict[str, str] | None] = None
+    timespan_seconds: ClassVar[bool] = True
 
-    ## Correlation query search phase
-    # The first step of a correlation query is to match events described by the referred Sigma
-    # rules. A main difference is made between single and multiple rule searches.
-    # A single rule search expression defines the search expression emitted if only one rule is
-    # referred by the correlation rule. It contains the following placeholders:
-    # * {rule} is the referred Sigma rule.
-    # * {ruleid} is the rule name or if not available the id of the rule.
-    # * {query} is the query generated from the referred Sigma rule.
-    # * {normalization} is the expression that normalizes the rule field names to unified alias
-    #   field names that can be later used for aggregation. The expression is defined by
-    #   correlation_search_field_normalization_expression defined below.
-    correlation_search_single_rule_expression: ClassVar[str | None] = None
-    # If no single rule query expression is defined, the multi query template expressions below are
-    # used and must be suitable for this purpose.
+    groupby_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": " GROUP BY {fields}",
+    }
+    groupby_field_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "{field}",
+    }
+    groupby_field_expression_joiner: ClassVar[Optional[Dict[str, str]]] = {
+        "default": ", ",
+    }
+    groupby_expression_nofield: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "",
+    }
 
-    # A multiple rule search expression defines the search expression emitted if multiple rules are
-    # referred by the correlation rule. This is split into the expression for the query itself:
-    correlation_search_multi_rule_expression: ClassVar[str | None] = None
-    # This template contains only one placeholder {queries} which contains the queries generated
-    # from single queries joined with a query separator:
-    # * A query template for each query generated from the referred Sigma rules similar to the
-    #   search_single_rule_expression defined above:
-    correlation_search_multi_rule_query_expression: ClassVar[str | None] = None
-    #   Usually the expression must contain some an expression that marks the matched event type as
-    #   such, e.g. by using the rule name or uuid.
-    # * A joiner string that is put between each search_multi_rule_query_expression:
-    correlation_search_multi_rule_query_expression_joiner: ClassVar[str | None] = None
+    event_count_correlation_query: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "SELECT {select_fields}{aggregate} FROM ({search}) AS subquery{groupby} HAVING {condition}",
+    }
+    event_count_aggregation_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": ", count(*) AS event_count",
+    }
+    event_count_condition_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "event_count {op} {count}",
+    }
 
-    ## Correlation query typing phase (optional)
-    # Event typing expression. In some query languages the initial search query only allows basic
-    # boolean expressions without the possibility to mark the matched events with a type, which is
-    # especially required by temporal correlation rules to distinguish between the different matched
-    # event types.
-    # This is the template for the event typing expression that is used to mark the matched events.
-    # It contains only a {queries} placeholder that is replaced by the result of joining
-    # typing_rule_query_expression with typing_rule_query_expression_joiner defined afterwards.
-    typing_expression: ClassVar[str | None] = None
-    # This is the template for the event typing expression for each query generated from the
-    # referred Sigma rules. It contains the following placeholders:
-    # * {rule} is the referred Sigma rule.
-    # * {ruleid} is the rule name or if not available the id of the rule.
-    # * {query} is the query generated from the referred Sigma rule.
-    typing_rule_query_expression: ClassVar[str | None] = None
-    # String that is used to join the event typing expressions for each rule query referred by the
-    # correlation rule:
-    typing_rule_query_expression_joiner: ClassVar[str | None] = None
+    value_count_correlation_query: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "SELECT {select_fields}{aggregate} FROM ({search}) AS subquery{groupby} HAVING {condition}",
+    }
+    value_count_aggregation_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": ", uniqExact({field}) AS value_count",
+    }
+    value_count_condition_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "value_count {op} {count}",
+    }
 
-    # Event field normalization expression. This is used to normalize field names in events matched
-    # by the Sigma rules referred by the correlation rule. This is a dictionary mapping from
-    # correlation_method names to format strings hat can contain the following placeholders:
-    # * {alias} is the field name to which the event field names are normalized and that is used as
-    #   group-by field in the aggregation phase.
-    # * {field} is the field name from the rule that is normalized.
-    # The expression is generated for each Sigma rule referred by the correlation rule and each
-    # alias field definition that contains a field definition for the Sigma rule for which the
-    # normalization expression is generated. All such generated expressions are joined with the
-    # correlation_search_field_normalization_expression_joiner and the result is passed as
-    # {normalization} to the correlation_search_*_rule_expression.
-    correlation_search_field_normalization_expression: ClassVar[str | None] = None
-    correlation_search_field_normalization_expression_joiner: ClassVar[str | None] = (
-        None
-    )
+    # toUnixTimestamp() used instead of julianday() for timespan comparison
+    temporal_correlation_query: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "SELECT {select_fields}{aggregate} FROM ({search}) AS subquery{groupby} HAVING {condition} AND toUnixTimestamp(last_event) - toUnixTimestamp(first_event) <= {timespan}",
+    }
+    temporal_aggregation_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": ", uniqExact(sigma_rule_id) AS rule_count, min(timestamp) AS first_event, max(timestamp) AS last_event",
+    }
+    temporal_condition_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "rule_count {op} {count}",
+    }
 
-    ## Correlation query aggregation phase
-    # All of the following class variables are dictionaries of mappings from
-    # correlation_method names to format strings with the following placeholders:
-    # * {rule} contains the whole correlation rule object.
-    # * {referenced_rules} contains the Sigma rules that are referred by the correlation rule.
-    # * {field} contains the field specified in the condition.
-    # * {timespan} contains the timespan converted into the target format by the convert_timespan
-    #   method.
-    # * {groupby} contains the group by expression generated by the groupby_* templates below.
-    # * {search} contains the search expression generated by the correlation query search phase.
-    event_count_aggregation_expression: ClassVar[dict[str, str] | None] = (
-        None  # Expression for event count correlation rules
-    )
-    value_count_aggregation_expression: ClassVar[dict[str, str] | None] = (
-        None  # Expression for value count correlation rules
-    )
-    temporal_aggregation_expression: ClassVar[dict[str, str] | None] = (
-        None  # Expression for temporal correlation rules
-    )
-    temporal_ordered_aggregation_expression: ClassVar[dict[str, str] | None] = (
-        None  # Expression for ordered temporal correlation rules
-    )
-    temporal_extended_aggregation_expression: ClassVar[dict[str, str] | None] = (
-        None  # Expression for extended temporal correlation rules
-    )
-    temporal_ordered_extended_aggregation_expression: ClassVar[
-        dict[str, str] | None
-    ] = None  # Expression for extended ordered temporal correlation rules
-    value_sum_aggregation_expression: ClassVar[dict[str, str] | None] = (
-        None  # Expression for value sum correlation rules
-    )
-    value_avg_aggregation_expression: ClassVar[dict[str, str] | None] = (
-        None  # Expression for value average correlation rules
-    )
-    value_percentile_aggregation_expression: ClassVar[dict[str, str] | None] = (
-        None  # Expression for value percentile correlation rules
-    )
-    value_median_aggregation_expression: ClassVar[dict[str, str] | None] = (
-        None  # Expression for value median correlation rules
-    )
+    temporal_ordered_correlation_query: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "SELECT {select_fields}{aggregate} FROM ({search}) AS subquery{groupby} HAVING {condition} AND toUnixTimestamp(last_event) - toUnixTimestamp(first_event) <= {timespan}",
+    }
+    # groupArray() + arrayStringConcat() replaces GROUP_CONCAT() which ClickHouse doesn't have
+    temporal_ordered_aggregation_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": ", arrayStringConcat(groupArray(sigma_rule_id), ',') AS rule_sequence, uniqExact(sigma_rule_id) AS rule_count, min(timestamp) AS first_event, max(timestamp) AS last_event",
+    }
+    temporal_ordered_condition_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "rule_count {op} {count}",
+    }
 
-    # Mapping from Sigma timespan to target format timespan specification. This can be:
-    # * A dictionary mapping Sigma timespan specifications to target format timespan specifications,
-    #   e.g. the Sigma timespan specifier "m" to "min".
-    # * None if the target query language uses the same timespan specification as Sigma or expects
-    #   seconds (see timespan_seconds) or a custom timespan conversion is implemented in the method
-    #   convert_timespan.
-    # The mapping can be incomplete. Non-existent timespan specifiers will be passed as-is if no
-    # mapping is defined for them.
-    timespan_mapping: ClassVar[dict[str, str] | None] = None
-    timespan_seconds: ClassVar[bool] = (
-        False  # If True, timespan is converted to seconds instead of using a more readable timespan specification like 5m.
-    )
+    value_sum_correlation_query: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "SELECT {select_fields}{aggregate} FROM ({search}) AS subquery{groupby} HAVING {condition}",
+    }
+    value_sum_aggregation_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": ", sum({field}) AS value_sum",
+    }
+    value_sum_condition_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "value_sum {op} {count}",
+    }
 
-    # Expression for a referenced rule as format string with {ruleid} placeholder that is replaced
-    # with the rule name or id similar to the search query expression.
-    referenced_rules_expression: ClassVar[dict[str, str] | None] = None
-    # All referenced rules expressions are joined with the following joiner:
-    referenced_rules_expression_joiner: ClassVar[dict[str, str] | None] = None
+    value_avg_correlation_query: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "SELECT {select_fields}{aggregate} FROM ({search}) AS subquery{groupby} HAVING {condition}",
+    }
+    value_avg_aggregation_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": ", avg({field}) AS value_avg",
+    }
+    value_avg_condition_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "value_avg {op} {count}",
+    }
 
-    # The following class variables defined the templates for the group by expression.
-    # First an expression frame is definied:
-    groupby_expression: ClassVar[dict[str, str] | None] = {"default": " GROUP BY ALL"}
-    # This expression only contains the {fields} placeholder that is replaced by the result of
-    # groupby_field_expression for each group by field joined by groupby_field_expression_joiner. The expression template
-    # itself can only contain a {field} placeholder for a single field name.
-    groupby_field_expression: ClassVar[dict[str, str] | None] = None
-    groupby_field_expression_joiner: ClassVar[dict[str, str] | None] = None
-    # Groupy by expression in the case that no fields were provided in the correlation rule:
-    groupby_expression_nofield: ClassVar[dict[str, str] | None] = None
+    value_percentile_correlation_query: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "SELECT {select_fields}{aggregate} FROM ({search}) AS subquery{groupby} HAVING {condition}",
+    }
+    value_percentile_aggregation_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": ", quantile({percentile} / 100)({field}) AS value_percentile",
+    }
+    value_percentile_condition_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "value_percentile {op} {count}",
+    }
 
-    # The following class variables defined the templates for the correlation fields expression, which are collecetd from
-    # referenced rules and then appended to the correlation rule.
-    # First an expression frame is definied:
-    correlation_fields_expression: ClassVar[dict[str, str] | None] = None
-    # This expression only contains the {fields} placeholder that is replaced by the result of
-    # correlation_fields_field_expression for each group by field joined by correlation_fields_field_expression_joiner. The expression template
-    # itself can only contain a {field} placeholder for a single field name.
-    correlation_fields_field_expression: ClassVar[dict[str, str] | None] = None
-    correlation_fields_field_expression_joiner: ClassVar[dict[str, str] | None] = None
+    value_median_correlation_query: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "SELECT {select_fields}{aggregate} FROM ({search}) AS subquery{groupby} HAVING {condition}",
+    }
+    value_median_aggregation_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": ", median({field}) AS value_median",
+    }
+    value_median_condition_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "value_median {op} {count}",
+    }
 
-    ## Correlation query condition phase
-    # The final correlation query phase adds a final filter that filters the aggregated events
-    # according to the given conditions. The following class variables define the templates for the
-    # different correlation rule types and correlation methods (dict keys).
-    # Each template gets the following placeholders:
-    # * {op} is the condition operator mapped according o correlation_condition_mapping.
-    # * {count} is the value specified in the condition.
-    # * {field} is the field specified in the condition.
-    # * {referenced_rules} contains the Sigma rules that are referred by the correlation rule. This
-    #   expression is generated by the referenced_rules_expression template in combination with the
-    #   referenced_rules_expression_joiner defined above.
-    # For extended conditions, the template also gets:
-    # * {extended_condition} is the parsed extended condition expression with rule references
-    #   replaced by appropriate query fragments.
-    event_count_condition_expression: ClassVar[dict[str, str] | None] = None
-    value_count_condition_expression: ClassVar[dict[str, str] | None] = None
-    temporal_condition_expression: ClassVar[dict[str, str] | None] = None
-    temporal_ordered_condition_expression: ClassVar[dict[str, str] | None] = None
-    temporal_extended_condition_expression: ClassVar[dict[str, str] | None] = None
-    temporal_ordered_extended_condition_expression: ClassVar[dict[str, str] | None] = (
-        None
-    )
-    value_sum_condition_expression: ClassVar[dict[str, str] | None] = None
-    value_avg_condition_expression: ClassVar[dict[str, str] | None] = None
-    value_percentile_condition_expression: ClassVar[dict[str, str] | None] = None
-    value_median_condition_expression: ClassVar[dict[str, str] | None] = None
-    # The following mapping defines the mapping from Sigma correlation condition operators like
-    # "lt", "gte" into the operatpors expected by the target query language.
     correlation_condition_mapping: ClassVar[
-        dict[SigmaCorrelationConditionOperator, str | None]
+        Optional[Dict[SigmaCorrelationConditionOperator, str]]
     ] = {
         SigmaCorrelationConditionOperator.LT: "<",
         SigmaCorrelationConditionOperator.LTE: "<=",
@@ -520,7 +275,217 @@ class ClickhouseBackend(TextQueryBackend):
         SigmaCorrelationConditionOperator.NEQ: "!=",
     }
 
+    referenced_rules_expression: ClassVar[Optional[Dict[str, str]]] = {
+        "default": "'{ruleid}'",
+    }
+    referenced_rules_expression_joiner: ClassVar[Optional[Dict[str, str]]] = {
+        "default": ", ",
+    }
+
+    table: str = "logs"
+    timestamp_field: str = "timestamp"
+
+    # Sigma level to ClickDetect numeric risk score
+    _level_map: ClassVar[Dict[str, int]] = {
+        "informational": 1,
+        "low": 3,
+        "medium": 5,
+        "high": 8,
+        "critical": 10,
+    }
+
+    def convert_correlation_rule_from_template(
+        self,
+        rule: SigmaCorrelationRule,
+        correlation_type: SigmaCorrelationTypeLiteral,
+        method: str,
+    ) -> List[str]:
+        """
+        Override to inject {select_fields} and substitute the configurable timestamp_field.
+        When GROUP BY is used, only the grouped fields are selected to avoid undefined
+        behavior in ClickHouse (unlike SELECT *, GROUP BY in ClickHouse requires selecting
+        only grouped columns or aggregate expressions).
+        """
+        from sigma.exceptions import SigmaConversionError
+
+        template = (
+            getattr(self, f"{correlation_type}_correlation_query")
+            or self.default_correlation_query
+        )
+        if template is None:
+            raise NotImplementedError(
+                f"Correlation rule type '{correlation_type}' is not supported by backend."
+            )
+
+        if method not in template:
+            raise SigmaConversionError(
+                rule,
+                rule.source,
+                f"Correlation method '{method}' is not supported by backend for correlation type '{correlation_type}'.",
+            )
+
+        search = self.convert_correlation_search(rule)
+
+        if rule.group_by:
+            select_fields = ", ".join(
+                self.escape_and_quote_field(f) for f in rule.group_by
+            )
+        else:
+            select_fields = "*"
+
+        aggregate = self.convert_correlation_aggregation_from_template(
+            rule, correlation_type, method, search
+        )
+        aggregate = aggregate.replace("timestamp", self.timestamp_field)
+
+        query = template[method].format(
+            search=search,
+            typing=self.convert_correlation_typing(rule),
+            timespan=self.convert_timespan(rule.timespan, method),
+            aggregate=aggregate,
+            condition=self.convert_correlation_condition_from_template(
+                rule.condition, rule.rules, correlation_type, method
+            ),
+            groupby=self.convert_correlation_aggregation_groupby_from_template(
+                rule.group_by, method
+            ),
+            select_fields=select_fields,
+        )
+
+        return [query]
+
+    def convert_value_str(
+        self,
+        s: SigmaString,
+        state: ConversionState,
+        no_quote: bool = False,
+    ) -> str:
+        """Convert a SigmaString into a plain string usable in a query."""
+        converted = s.convert(
+            escape_char=self.escape_char,
+            wildcard_multi=self.wildcard_multi,
+            wildcard_single=self.wildcard_single,
+            add_escaped=self.add_escaped,
+            filter_chars=self.filter_chars,
+        )
+        converted = converted.replace("'", "''")
+
+        if self.decide_string_quoting(s) and not no_quote:
+            return self.quote_string(converted)
+        else:
+            return converted
+
+    def convert_condition_field_eq_val_str(
+        self, cond: ConditionFieldEqualsValueExpression, state: ConversionState
+    ) -> Union[str, DeferredQueryExpression]:
+        """Conversion of field = string value expressions."""
+        try:
+            # ILIKE/LIKE templates already embed single quotes around {value},
+            # so we must skip the outer quoting from convert_value_str.
+            remove_quote = True
+
+            if (
+                self.startswith_expression is not None
+                and cond.value.endswith(SpecialChars.WILDCARD_MULTI)
+                and not cond.value[:-1].contains_special()
+            ):
+                expr = self.startswith_expression
+                value = cond.value[:-1]
+            elif (
+                self.endswith_expression is not None
+                and cond.value.startswith(SpecialChars.WILDCARD_MULTI)
+                and not cond.value[1:].contains_special()
+            ):
+                expr = self.endswith_expression
+                value = cond.value[1:]
+            elif (
+                self.contains_expression is not None
+                and cond.value.startswith(SpecialChars.WILDCARD_MULTI)
+                and cond.value.endswith(SpecialChars.WILDCARD_MULTI)
+                and not cond.value[1:-1].contains_special()
+            ):
+                expr = self.contains_expression
+                value = cond.value[1:-1]
+            elif self.wildcard_match_expression is not None and (
+                cond.value.contains_special()
+                or self.wildcard_multi in cond.value
+                or self.wildcard_single in cond.value
+                or self.escape_char in cond.value
+            ):
+                expr = self.wildcard_match_expression
+                value = cond.value
+            else:
+                expr = "{field}" + self.eq_token + "{value}"
+                value = cond.value
+                remove_quote = False
+
+            return expr.format(
+                field=self.escape_and_quote_field(cond.field),
+                value=self.convert_value_str(value, state, no_quote=remove_quote),
+            )
+        except TypeError:  # pragma: no cover
+            raise NotImplementedError(
+                "Field equals string value expressions are not supported by the backend."
+            )
+
     def finalize_query_default(
-        self, rule: SigmaRule, query: Any, index: int, state: ConversionState
+        self,
+        rule: Union[SigmaRule, SigmaCorrelationRule],
+        query: str,
+        index: int,
+        state: ConversionState,
     ) -> Any:
-        return f"SELECT * FROM logs WHERE {query}"
+        if isinstance(rule, SigmaCorrelationRule):
+            return query
+        return f"SELECT * FROM {self.table} WHERE {query}"
+
+    def finalize_query_clickdetect(
+        self,
+        rule: Union[SigmaRule, SigmaCorrelationRule],
+        query: str,
+        index: int,
+        state: ConversionState,
+    ) -> Any:
+        if isinstance(rule, SigmaCorrelationRule):
+            sql_query = query
+        else:
+            sql_query = f"SELECT * FROM {self.table} WHERE {query}"
+
+        level_name = rule.level.name.lower() if rule.level else "informational"
+        level_score = self._level_map.get(level_name, 0)
+
+        return {
+            "id": str(rule.id) if rule.id else "",
+            "name": rule.title or "",
+            "level": level_score,
+            "size": ">0",
+            "active": True,
+            "author": [rule.author] if rule.author else [],
+            "group": rule.logsource.product or ""
+            if not isinstance(rule, SigmaCorrelationRule)
+            else "",
+            "tags": [str(tag) for tag in rule.tags] if rule.tags else [],
+            "rule": sql_query,
+        }
+
+    def finalize_output_clickdetect(self, queries: List[Dict]) -> str:
+        return yaml.dump(
+            list(queries),
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        )
+
+    def convert_condition_val_str(
+        self, cond: ConditionValueExpression, state: ConversionState
+    ) -> Union[str, DeferredQueryExpression]:
+        raise SigmaFeatureNotSupportedByBackendError(
+            "Value-only string expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
+        )
+
+    def convert_condition_val_num(
+        self, cond: ConditionValueExpression, state: ConversionState
+    ) -> Union[str, DeferredQueryExpression]:
+        raise SigmaFeatureNotSupportedByBackendError(
+            "Value-only number expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
+        )
