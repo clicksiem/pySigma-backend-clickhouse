@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.0] - 2026-05-21
+
+### 🚀 Features
+
+- Add IN operations for clickhouse sigma by @souzomain
+
 ## [0.1.1] - 2026-05-21
 
 ### 🐛 Bug Fixes
