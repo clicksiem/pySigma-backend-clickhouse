@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.1] - 2026-05-21
+
+### 🐛 Bug Fixes
+
+- *(deps)* Downgrade pysigma to 1.0.0, others packages uses pysigma 1.0.0 instead 1.3.x and cause conflicts by @souzomain
+
 ## [0.1.0] - 2026-05-21
 
 ### 🚀 Features
