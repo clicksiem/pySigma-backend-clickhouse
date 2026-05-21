@@ -136,7 +136,7 @@ class ClickhouseBackend(TextQueryBackend):
 
     field_null_expression: ClassVar[str] = "isNull({field})"
 
-    convert_or_as_in: ClassVar[bool] = False
+    convert_or_as_in: ClassVar[bool] = True
     convert_and_as_in: ClassVar[bool] = False
     in_expressions_allow_wildcards: ClassVar[bool] = False
     field_in_list_expression: ClassVar[str] = "{field} {op} ({list})"

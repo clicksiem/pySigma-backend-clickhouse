@@ -67,7 +67,7 @@ def test_and_or_expression(backend: ClickhouseBackend):
                 condition: sel
         """)
     ) == [
-        "SELECT * FROM logs WHERE (fieldA='valueA1' OR fieldA='valueA2') AND (fieldB='valueB1' OR fieldB='valueB2')"
+        "SELECT * FROM logs WHERE (fieldA IN ('valueA1', 'valueA2')) AND (fieldB IN ('valueB1', 'valueB2'))"
     ]
 
 
@@ -1257,7 +1257,7 @@ def test_in_expression_all_plain_values(backend: ClickhouseBackend):
                 condition: sel
         """)
     ) == [
-        "SELECT * FROM logs WHERE fieldA='val1' OR fieldA='val2' OR fieldA='val3'"
+        "SELECT * FROM logs WHERE fieldA IN ('val1', 'val2', 'val3')"
     ]
 
 
