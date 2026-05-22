@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.2] - 2026-05-22
+
+### 🔧 Other changes
+
+- *(other)* Remove unused function by @souzomain
+
 ## [0.3.1] - 2026-05-22
 
 ### 🐛 Bug Fixes
