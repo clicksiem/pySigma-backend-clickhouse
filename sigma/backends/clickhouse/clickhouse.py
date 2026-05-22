@@ -12,6 +12,7 @@ from sigma.conditions import (
     ConditionFieldEqualsValueExpression,
 )
 from sigma.types import (
+    CompareOperators,
     SigmaCompareExpression,
     SigmaString,
     SpecialChars,
@@ -26,7 +27,7 @@ from sigma.correlations import (
 
 import re
 import yaml
-from typing import ClassVar, Dict, List, Optional, Pattern, Tuple, Union, Any
+from typing import ClassVar, Dict, List, Optional, Pattern, Tuple, Type, Union, Any
 
 
 class ClickhouseBackend(TextQueryBackend):
@@ -39,17 +40,17 @@ class ClickhouseBackend(TextQueryBackend):
     }
     requires_pipeline: ClassVar[bool] = False
 
-    correlation_methods: ClassVar[Dict[str, str]] = {
+    correlation_methods: ClassVar[Optional[Dict[str, str]]] = {
         "default": "Default ClickHouse correlation using subqueries and aggregate functions",
     }
 
-    precedence: ClassVar[Tuple[ConditionItem, ConditionItem, ConditionItem]] = (
+    precedence: ClassVar[tuple[Type[ConditionItem], Type[ConditionItem], Type[ConditionItem]]] = (
         ConditionNOT,
         ConditionAND,
         ConditionOR,
     )
     parenthesize: bool = True
-    group_expression: ClassVar[str] = "({expr})"
+    group_expression: ClassVar[Optional[str]] = "({expr})"
 
     token_separator: str = " "
     or_token: ClassVar[str] = "OR"
@@ -58,50 +59,51 @@ class ClickhouseBackend(TextQueryBackend):
     eq_token: ClassVar[str] = "="
 
     # ClickHouse quotes identifiers with backticks (same as MySQL)
-    field_quote: ClassVar[str] = "`"
-    field_quote_pattern: ClassVar[Pattern] = re.compile("^[a-zA-Z0-9_]*$")
+    field_quote: ClassVar[Optional[Optional[str]]] = "`"
+    field_quote_pattern: ClassVar[Optional[Pattern]] = re.compile("^[a-zA-Z0-9_]*$")
     field_quote_pattern_negation: ClassVar[bool] = True
 
     str_quote: ClassVar[str] = "'"
-    escape_char: ClassVar[str] = "\\"
-    wildcard_multi: ClassVar[str] = "%"
-    wildcard_single: ClassVar[str] = "_"
+    escape_char: ClassVar[Optional[str]] = "\\"
+    wildcard_multi: ClassVar[Optional[str]] = "%"
+    wildcard_single: ClassVar[Optional[str]] = "_"
     add_escaped: ClassVar[str] = "\\"
-    bool_values: ClassVar[Dict[bool, str]] = {
+    bool_values: ClassVar[Dict[bool, Optional[Optional[str]]]] = {
         True: "true",
         False: "false",
     }
 
     # ClickHouse ILIKE is case-insensitive (Sigma default), LIKE is case-sensitive.
     # No ESCAPE keyword needed; backslash is the default escape character.
-    startswith_expression: ClassVar[str] = "{field} ILIKE '{value}%'"
-    endswith_expression: ClassVar[str] = "{field} ILIKE '%{value}'"
-    contains_expression: ClassVar[str] = "{field} ILIKE '%{value}%'"
-    wildcard_match_expression: ClassVar[str] = "{field} ILIKE '{value}'"
+    startswith_expression: ClassVar[Optional[Optional[str]]] = "{field} ILIKE '{value}%'"
+    endswith_expression: ClassVar[Optional[Optional[str]]] = "{field} ILIKE '%{value}'"
+    contains_expression: ClassVar[Optional[str]] = "{field} ILIKE '%{value}%'"
+    wildcard_match_expression: ClassVar[Optional[str]] = "{field} ILIKE '{value}'"
 
     # Field existence
-    field_exists_expression: ClassVar[str] = "isNotNull({field})"
-    field_not_exists_expression: ClassVar[str] = "isNull({field})"
+    field_exists_expression: ClassVar[Optional[str]] = "isNotNull({field})"
+    field_not_exists_expression: ClassVar[Optional[str]] = "isNull({field})"
 
     # Regular expressions use match() in ClickHouse
-    re_expression: ClassVar[str] = "match({field}, '{regex}')"
+    re_expression: ClassVar[Optional[str]] = "match({field}, '{regex}')"
     re_escape_char: ClassVar[str] = ""
-    re_escape: ClassVar[Tuple[str, ...]] = ()
+    re_escape: ClassVar[list[str]] = []
     re_escape_escape_char: bool = True
     re_flag_prefix: bool = True
 
     # Case-sensitive: LIKE is case-sensitive in ClickHouse for ASCII.
     # Fallback uses match() regex which is always case-sensitive.
-    case_sensitive_startswith_expression: ClassVar[Optional[str]] = None
-    case_sensitive_endswith_expression: ClassVar[Optional[str]] = None
-    case_sensitive_contains_expression: ClassVar[Optional[str]] = None
-    case_sensitive_match_expression: ClassVar[str] = "match({field}, '{regex}')"
+    case_sensitive_startswith_expression: ClassVar[Optional[Optional[str]]] = None
+    case_sensitive_endswith_expression: ClassVar[Optional[Optional[str]]] = None
+    case_sensitive_contains_expression: ClassVar[Optional[Optional[str]]] = None
+    case_sensitive_match_expression: ClassVar[Optional[str]] = "match({field}, '{regex}')"
 
     # CIDR: ClickHouse has native isIPAddressInRange()
-    cidr_expression: ClassVar[str] = "isIPAddressInRange({field}, '{value}')"
+    cidr_expression: ClassVar[Optional[str]] = "isIPAddressInRange({field}, '{value}')"
 
-    compare_op_expression: ClassVar[str] = "{field} {operator} {value}"
-    compare_operators: ClassVar[Dict[SigmaCompareExpression.CompareOperators, str]] = {
+    compare_op_expression: ClassVar[Optional[str]] = "{field} {operator} {value}"
+
+    compare_operators: ClassVar[Optional[dict[CompareOperators, str]]] = {
         SigmaCompareExpression.CompareOperators.LT: "<",
         SigmaCompareExpression.CompareOperators.LTE: "<=",
         SigmaCompareExpression.CompareOperators.GT: ">",
@@ -109,20 +111,20 @@ class ClickhouseBackend(TextQueryBackend):
         SigmaCompareExpression.CompareOperators.NEQ: "!=",
     }
 
-    field_equals_field_expression: ClassVar[Optional[str]] = "{field1}={field2}"
-    field_equals_field_startswith_expression: ClassVar[Optional[str]] = (
+    field_equals_field_expression: ClassVar[Optional[Optional[str]]] = "{field1}={field2}"
+    field_equals_field_startswith_expression: ClassVar[Optional[Optional[str]]] = (
         "{field1} ILIKE {field2} || '%'"
     )
-    field_equals_field_endswith_expression: ClassVar[Optional[str]] = (
+    field_equals_field_endswith_expression: ClassVar[Optional[Optional[str]]] = (
         "{field1} ILIKE '%' || {field2}"
     )
-    field_equals_field_contains_expression: ClassVar[Optional[str]] = (
+    field_equals_field_contains_expression: ClassVar[Optional[Optional[str]]] = (
         "{field1} ILIKE '%' || {field2} || '%'"
     )
     field_equals_field_escaping_quoting: Tuple[bool, bool] = (True, True)
 
     # ClickHouse timestamp functions: toHour(), toMinute(), toDayOfMonth(), etc.
-    field_timestamp_part_expression: ClassVar[Optional[str]] = (
+    field_timestamp_part_expression: ClassVar[Optional[Optional[str]]] = (
         "{timestamp_part}({field})"
     )
     timestamp_part_mapping: ClassVar[Optional[Dict[TimestampPart, str]]] = {
@@ -134,17 +136,17 @@ class ClickhouseBackend(TextQueryBackend):
         TimestampPart.YEAR: "toYear",
     }
 
-    field_null_expression: ClassVar[str] = "isNull({field})"
+    field_null_expression: ClassVar[Optional[str]] = "isNull({field})"
 
     convert_or_as_in: ClassVar[bool] = True
     convert_and_as_in: ClassVar[bool] = False
     in_expressions_allow_wildcards: ClassVar[bool] = False
-    field_in_list_expression: ClassVar[str] = "{field} {op} ({list})"
-    or_in_operator: ClassVar[str] = "IN"
-    list_separator: ClassVar[str] = ", "
+    field_in_list_expression: ClassVar[Optional[str]] = "{field} {op} ({list})"
+    or_in_operator: ClassVar[Optional[str]] = "IN"
+    list_separator: ClassVar[Optional[str]] = ", "
 
-    deferred_start: ClassVar[str] = ""
-    deferred_separator: ClassVar[str] = ""
+    deferred_start: ClassVar[Optional[str]] = ""
+    deferred_separator: ClassVar[Optional[str]] = ""
     deferred_only_query: ClassVar[str] = ""
 
     # ========== Correlation Rule Templates ==========
