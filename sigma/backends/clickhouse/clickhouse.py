@@ -292,8 +292,8 @@ class ClickhouseBackend(TextQueryBackend):
         "default": ", ",
     }
 
-    #unbound_value_str_expression: ClassVar[Optional[str]] = "ILIKE '%{value}%'"
-    #unbound_value_num_expression: ClassVar[Optional[str]] = "ILIKE '%{value}%'"
+    # unbound_value_str_expression: ClassVar[Optional[str]] = "ILIKE '%{value}%'"
+    # unbound_value_num_expression: ClassVar[Optional[str]] = "ILIKE '%{value}%'"
 
     table: str = ""
     full_log: Optional[str]
@@ -505,19 +505,24 @@ class ClickhouseBackend(TextQueryBackend):
     def convert_condition_val_str(
         self, cond: ConditionValueExpression, state: ConversionState
     ) -> Union[str, DeferredQueryExpression]:
-        if(not self.full_log):
+        if not self.full_log:
             raise SigmaFeatureNotSupportedByBackendError(
                 "Value-only string expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
             )
 
-        return "hasToken({field}, '{value}')".format(field=self.full_log, value=cond.value.__str__().replace("'", "\\'"))
+        return "hasToken({field}, {value})".format(
+            field=self.full_log, value=self.convert_value_str(cond.value, state)
+        )
 
     def convert_condition_val_num(
         self, cond: ConditionValueExpression, state: ConversionState
     ) -> Union[str, DeferredQueryExpression]:
-        
-        if(not self.full_log):
+
+        if not self.full_log:
             raise SigmaFeatureNotSupportedByBackendError(
                 "Value-only number expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
             )
-        return "hasToken({field}, '{value}')".format(field=self.full_log, value=cond.value.__str__().replace("'", "\\'"))
+        return "hasToken({field}, '{value}')".format(
+            field=self.full_log,
+            value=cond.value,
+        )

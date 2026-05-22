@@ -812,7 +812,7 @@ def test_fts_keywords_single_quot_escape(backend: ClickhouseBackend):
                         - "'Value1"
                     condition: keywords
             """)
-    ) == ["SELECT * FROM logs WHERE hasToken(full_log, '\\'Value1')"]
+    ) == ["SELECT * FROM logs WHERE hasToken(full_log, '''Value1')"]
         
 
 
