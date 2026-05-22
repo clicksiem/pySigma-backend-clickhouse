@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.3] - 2026-05-22
+
+### 🐛 Bug Fixes
+
+- Use `convert_value_str` instead hardcoded replace by @souzomain
+
+### 🔧 Other changes
+
+- *(other)* Add base clicksiem pipeline by @souzomain
+
 ## [0.3.2] - 2026-05-22
 
 ### 🔧 Other changes
