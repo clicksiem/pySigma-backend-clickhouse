@@ -293,7 +293,11 @@ class ClickhouseBackend(TextQueryBackend):
         "default": ", ",
     }
 
-    table: str = "logs"
+    #unbound_value_str_expression: ClassVar[Optional[str]] = "ILIKE '%{value}%'"
+    #unbound_value_num_expression: ClassVar[Optional[str]] = "ILIKE '%{value}%'"
+
+    table: str = ""
+    full_log: Optional[str]
     timestamp_field: str = "timestamp"
 
     # Sigma level to ClickDetect numeric risk score
@@ -310,7 +314,7 @@ class ClickhouseBackend(TextQueryBackend):
         processing_pipeline: Optional[ProcessingPipeline] = None,
         collect_errors: bool = False,
         table_name: str = "logs",
-        full_log_column: str = "full_log",
+        full_log_column: Optional[str] = "full_log",
         **kwargs,
     ):
         super().__init__(processing_pipeline, collect_errors, **kwargs)
@@ -499,17 +503,21 @@ class ClickhouseBackend(TextQueryBackend):
             sort_keys=False,
         )
 
+    def convert_condition_val_str(
+        self, cond: ConditionValueExpression, state: ConversionState
+    ) -> Union[str, DeferredQueryExpression]:
+        if(not self.full_log):
+            raise SigmaFeatureNotSupportedByBackendError(
+                "Value-only string expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
+            )
 
-# def convert_condition_val_str(
-#     self, cond: ConditionValueExpression, state: ConversionState
-# ) -> Union[str, DeferredQueryExpression]:
-#     raise SigmaFeatureNotSupportedByBackendError(
-#         "Value-only string expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
-#     )
+        return "hasToken({field}, '{value}')".format(field=self.full_log, value=cond.value)
 
-# def convert_condition_val_num(
-#    self, cond: ConditionValueExpression, state: ConversionState
-# ) -> Union[str, DeferredQueryExpression]:
-#    raise SigmaFeatureNotSupportedByBackendError(
-#        "Value-only number expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
-#    )
+    def convert_condition_val_num(
+        self, cond: ConditionValueExpression, state: ConversionState
+    ) -> Union[str, DeferredQueryExpression]:
+        if(not self.full_log):
+            raise SigmaFeatureNotSupportedByBackendError(
+                "Value-only number expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
+            )
+        return "hasToken({field}, '{value}')".format(field=self.full_log, value=cond.value)

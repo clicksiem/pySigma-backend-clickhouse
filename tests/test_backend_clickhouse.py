@@ -3,7 +3,7 @@ import pytest
 from sigma.collection import SigmaCollection
 from sigma.backends.clickhouse import ClickhouseBackend
 from sigma.exceptions import SigmaFeatureNotSupportedByBackendError
-
+from logging import getLogger
 
 @pytest.fixture
 def backend():
@@ -763,30 +763,27 @@ def test_fieldref_multiple_values(backend: ClickhouseBackend):
     ]
 
 
-# ==================== FTS (unsupported) ====================
+# ==================== FTS ====================
 
 
-def test_fts_keywords_str_raises(backend: ClickhouseBackend):
-    with pytest.raises(SigmaFeatureNotSupportedByBackendError):
-        backend.convert(
-            SigmaCollection.from_yaml("""
-                title: Test
-                status: test
-                logsource:
-                    category: test_category
-                    product: test_product
-                detection:
-                    keywords:
-                        - value1
-                        - value2
-                    condition: keywords
-            """)
-        )
+def test_fts_keywords_str(backend: ClickhouseBackend):
+    assert backend.convert(
+        SigmaCollection.from_yaml("""
+            title: Test
+            status: test
+            logsource:
+                category: test_category
+                product: test_product
+            detection:
+                keywords:
+                    - value1
+                    - value2
+                condition: keywords
+        """)
+    ) == ["SELECT * FROM logs WHERE hasToken(full_log, 'value1') OR hasToken(full_log, 'value2')"]
 
-
-def test_fts_keywords_num_raises(backend: ClickhouseBackend):
-    with pytest.raises(SigmaFeatureNotSupportedByBackendError):
-        backend.convert(
+def test_fts_keywords_num(backend: ClickhouseBackend):
+    assert backend.convert(
             SigmaCollection.from_yaml("""
                 title: Test
                 status: test
@@ -799,11 +796,11 @@ def test_fts_keywords_num_raises(backend: ClickhouseBackend):
                         - 2
                     condition: keywords
             """)
-        )
+    ) == ["SELECT * FROM logs WHERE hasToken(full_log, '1') OR hasToken(full_log, '2')"]
+        
 
 
 # ==================== Custom Table ====================
-
 
 def test_custom_table():
     backend = ClickhouseBackend()
