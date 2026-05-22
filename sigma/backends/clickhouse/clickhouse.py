@@ -17,7 +17,6 @@ from sigma.types import (
     SigmaCompareExpression,
     SigmaString,
     SpecialChars,
-    SigmaCIDRExpression,
     TimestampPart,
 )
 from sigma.correlations import (
