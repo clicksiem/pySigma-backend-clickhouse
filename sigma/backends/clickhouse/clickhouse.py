@@ -1,6 +1,7 @@
 from sigma.conversion.deferred import DeferredQueryExpression
 from sigma.conversion.state import ConversionState
 from sigma.exceptions import SigmaFeatureNotSupportedByBackendError
+from sigma.processing.pipeline import ProcessingPipeline
 from sigma.rule import SigmaRule
 from sigma.conversion.base import TextQueryBackend
 from sigma.conditions import (
@@ -44,7 +45,9 @@ class ClickhouseBackend(TextQueryBackend):
         "default": "Default ClickHouse correlation using subqueries and aggregate functions",
     }
 
-    precedence: ClassVar[tuple[Type[ConditionItem], Type[ConditionItem], Type[ConditionItem]]] = (
+    precedence: ClassVar[
+        tuple[Type[ConditionItem], Type[ConditionItem], Type[ConditionItem]]
+    ] = (
         ConditionNOT,
         ConditionAND,
         ConditionOR,
@@ -75,7 +78,9 @@ class ClickhouseBackend(TextQueryBackend):
 
     # ClickHouse ILIKE is case-insensitive (Sigma default), LIKE is case-sensitive.
     # No ESCAPE keyword needed; backslash is the default escape character.
-    startswith_expression: ClassVar[Optional[Optional[str]]] = "{field} ILIKE '{value}%'"
+    startswith_expression: ClassVar[Optional[Optional[str]]] = (
+        "{field} ILIKE '{value}%'"
+    )
     endswith_expression: ClassVar[Optional[Optional[str]]] = "{field} ILIKE '%{value}'"
     contains_expression: ClassVar[Optional[str]] = "{field} ILIKE '%{value}%'"
     wildcard_match_expression: ClassVar[Optional[str]] = "{field} ILIKE '{value}'"
@@ -96,7 +101,9 @@ class ClickhouseBackend(TextQueryBackend):
     case_sensitive_startswith_expression: ClassVar[Optional[Optional[str]]] = None
     case_sensitive_endswith_expression: ClassVar[Optional[Optional[str]]] = None
     case_sensitive_contains_expression: ClassVar[Optional[Optional[str]]] = None
-    case_sensitive_match_expression: ClassVar[Optional[str]] = "match({field}, '{regex}')"
+    case_sensitive_match_expression: ClassVar[Optional[str]] = (
+        "match({field}, '{regex}')"
+    )
 
     # CIDR: ClickHouse has native isIPAddressInRange()
     cidr_expression: ClassVar[Optional[str]] = "isIPAddressInRange({field}, '{value}')"
@@ -111,7 +118,9 @@ class ClickhouseBackend(TextQueryBackend):
         SigmaCompareExpression.CompareOperators.NEQ: "!=",
     }
 
-    field_equals_field_expression: ClassVar[Optional[Optional[str]]] = "{field1}={field2}"
+    field_equals_field_expression: ClassVar[Optional[Optional[str]]] = (
+        "{field1}={field2}"
+    )
     field_equals_field_startswith_expression: ClassVar[Optional[Optional[str]]] = (
         "{field1} ILIKE {field2} || '%'"
     )
@@ -296,6 +305,18 @@ class ClickhouseBackend(TextQueryBackend):
         "critical": 10,
     }
 
+    def __init__(
+        self,
+        processing_pipeline: Optional[ProcessingPipeline] = None,
+        collect_errors: bool = False,
+        table_name: str = "logs",
+        full_log_column: str = "full_log",
+        **kwargs,
+    ):
+        super().__init__(processing_pipeline, collect_errors, **kwargs)
+        self.table = table_name
+        self.full_log = full_log_column
+
     def convert_correlation_rule_from_template(
         self,
         rule: SigmaCorrelationRule,
@@ -478,16 +499,17 @@ class ClickhouseBackend(TextQueryBackend):
             sort_keys=False,
         )
 
-    def convert_condition_val_str(
-        self, cond: ConditionValueExpression, state: ConversionState
-    ) -> Union[str, DeferredQueryExpression]:
-        raise SigmaFeatureNotSupportedByBackendError(
-            "Value-only string expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
-        )
 
-    def convert_condition_val_num(
-        self, cond: ConditionValueExpression, state: ConversionState
-    ) -> Union[str, DeferredQueryExpression]:
-        raise SigmaFeatureNotSupportedByBackendError(
-            "Value-only number expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
-        )
+# def convert_condition_val_str(
+#     self, cond: ConditionValueExpression, state: ConversionState
+# ) -> Union[str, DeferredQueryExpression]:
+#     raise SigmaFeatureNotSupportedByBackendError(
+#         "Value-only string expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
+#     )
+
+# def convert_condition_val_num(
+#    self, cond: ConditionValueExpression, state: ConversionState
+# ) -> Union[str, DeferredQueryExpression]:
+#    raise SigmaFeatureNotSupportedByBackendError(
+#        "Value-only number expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
+#    )
