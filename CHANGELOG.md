@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0] - 2026-05-22
+
+### 🚀 Features
+
+- Add optional FTS using clickhouse function `hasToken` by @souzomain
+
+### 🔧 Other changes
+
+- *(other)* Update variables types to fix lsp issues by @souzomain
+- *(other)* Add __init__.py to configure backend variables like `table` and `full_log` column by @souzomain
+
 ## [0.2.0] - 2026-05-21
 
 ### 🚀 Features
