@@ -4,3 +4,4 @@ cache/
 .pytest_cache/
 build/
 token
+cov.xml
