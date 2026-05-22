@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.1] - 2026-05-22
+
+### 🐛 Bug Fixes
+
+- Add string quote escape by @souzomain
+
 ## [0.3.0] - 2026-05-22
 
 ### 🚀 Features
