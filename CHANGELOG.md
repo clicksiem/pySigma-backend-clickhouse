@@ -47,4 +47,3 @@
 ## New Contributors
 
 * @souzomain made their first contribution
-# Changelog
