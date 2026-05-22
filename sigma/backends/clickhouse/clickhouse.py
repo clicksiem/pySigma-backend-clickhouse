@@ -511,13 +511,14 @@ class ClickhouseBackend(TextQueryBackend):
                 "Value-only string expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
             )
 
-        return "hasToken({field}, '{value}')".format(field=self.full_log, value=cond.value)
+        return "hasToken({field}, '{value}')".format(field=self.full_log, value=cond.value.__str__().replace("'", "\\'"))
 
     def convert_condition_val_num(
         self, cond: ConditionValueExpression, state: ConversionState
     ) -> Union[str, DeferredQueryExpression]:
+        
         if(not self.full_log):
             raise SigmaFeatureNotSupportedByBackendError(
                 "Value-only number expressions (i.e Full Text Search or 'keywords' search) are not supported by the backend."
             )
-        return "hasToken({field}, '{value}')".format(field=self.full_log, value=cond.value)
+        return "hasToken({field}, '{value}')".format(field=self.full_log, value=cond.value.__str__().replace("'", "\\'"))

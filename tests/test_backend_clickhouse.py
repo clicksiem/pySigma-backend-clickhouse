@@ -799,6 +799,22 @@ def test_fts_keywords_num(backend: ClickhouseBackend):
     ) == ["SELECT * FROM logs WHERE hasToken(full_log, '1') OR hasToken(full_log, '2')"]
         
 
+def test_fts_keywords_single_quot_escape(backend: ClickhouseBackend):
+    assert backend.convert(
+            SigmaCollection.from_yaml("""
+                title: Test
+                status: test
+                logsource:
+                    category: test_category
+                    product: test_product
+                detection:
+                    keywords:
+                        - "'Value1"
+                    condition: keywords
+            """)
+    ) == ["SELECT * FROM logs WHERE hasToken(full_log, '\\'Value1')"]
+        
+
 
 # ==================== Custom Table ====================
 
