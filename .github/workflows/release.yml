@@ -26,7 +26,10 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install dev dependencies (includes git-cliff)
-        run: uv sync --only-dev
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest
 
       - name: Check if release is needed
         id: check
