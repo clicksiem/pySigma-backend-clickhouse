@@ -500,6 +500,7 @@ class ClickhouseBackend(TextQueryBackend):
             default_flow_style=False,
             allow_unicode=True,
             sort_keys=False,
+            width=None
         )
 
     def convert_condition_val_str(
