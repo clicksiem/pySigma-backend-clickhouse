@@ -2,8 +2,7 @@ import yaml
 import pytest
 from sigma.collection import SigmaCollection
 from sigma.backends.clickhouse import ClickhouseBackend
-from sigma.exceptions import SigmaFeatureNotSupportedByBackendError
-from logging import getLogger
+
 
 @pytest.fixture
 def backend():
@@ -284,9 +283,7 @@ def test_all_contains_modifier(backend: ClickhouseBackend):
                         - part2
                 condition: sel
         """)
-    ) == [
-        "SELECT * FROM logs WHERE fieldA ILIKE '%part1%' AND fieldA ILIKE '%part2%'"
-    ]
+    ) == ["SELECT * FROM logs WHERE fieldA ILIKE '%part1%' AND fieldA ILIKE '%part2%'"]
 
 
 # ==================== Field Name Quoting ====================
@@ -758,9 +755,7 @@ def test_fieldref_multiple_values(backend: ClickhouseBackend):
                     fieldB: foo
                 condition: sel
         """)
-    ) == [
-        "SELECT * FROM logs WHERE (fieldA=fieldD OR fieldA=fieldE) AND fieldB='foo'"
-    ]
+    ) == ["SELECT * FROM logs WHERE (fieldA=fieldD OR fieldA=fieldE) AND fieldB='foo'"]
 
 
 # ==================== FTS ====================
@@ -780,11 +775,14 @@ def test_fts_keywords_str(backend: ClickhouseBackend):
                     - value2
                 condition: keywords
         """)
-    ) == ["SELECT * FROM logs WHERE hasToken(full_log, 'value1') OR hasToken(full_log, 'value2')"]
+    ) == [
+        "SELECT * FROM logs WHERE hasToken(full_log, 'value1') OR hasToken(full_log, 'value2')"
+    ]
+
 
 def test_fts_keywords_num(backend: ClickhouseBackend):
     assert backend.convert(
-            SigmaCollection.from_yaml("""
+        SigmaCollection.from_yaml("""
                 title: Test
                 status: test
                 logsource:
@@ -797,11 +795,11 @@ def test_fts_keywords_num(backend: ClickhouseBackend):
                     condition: keywords
             """)
     ) == ["SELECT * FROM logs WHERE hasToken(full_log, '1') OR hasToken(full_log, '2')"]
-        
+
 
 def test_fts_keywords_single_quot_escape(backend: ClickhouseBackend):
     assert backend.convert(
-            SigmaCollection.from_yaml("""
+        SigmaCollection.from_yaml("""
                 title: Test
                 status: test
                 logsource:
@@ -813,10 +811,10 @@ def test_fts_keywords_single_quot_escape(backend: ClickhouseBackend):
                     condition: keywords
             """)
     ) == ["SELECT * FROM logs WHERE hasToken(full_log, '''Value1')"]
-        
 
 
 # ==================== Custom Table ====================
+
 
 def test_custom_table():
     backend = ClickhouseBackend()
@@ -857,9 +855,9 @@ def test_clickdetect_output_basic(backend: ClickhouseBackend):
                 fieldA: value
             condition: sel
     """)
-    result = yaml.safe_load(backend.convert(rule, "clickdetect"))
-    assert len(result) == 1
-    r = result[0]
+    result = yaml.safe_load(backend.convert(rule, "clickdetect")[0])
+    assert len(result) == 9
+    r = result
     assert r["name"] == "Test Rule"
     assert r["id"] == "12345678-1234-1234-1234-123456789012"
     assert r["rule"] == "SELECT * FROM logs WHERE fieldA='value'"
@@ -890,11 +888,11 @@ def test_clickdetect_level_mapping(backend: ClickhouseBackend):
                     fieldA: value
                 condition: sel
         """)
-        result = yaml.safe_load(backend.convert(rule, "clickdetect"))
-        assert result[0]["level"] == expected_score, f"Failed for level {sigma_level}"
+        result = yaml.safe_load(backend.convert(rule, "clickdetect")[0])
+        assert result["level"] == expected_score, f"Failed for level {sigma_level}"
 
 
-def test_clickdetect_output_is_yaml_list(backend: ClickhouseBackend):
+def test_clickdetect_output_is_yaml_dict(backend: ClickhouseBackend):
     rule = SigmaCollection.from_yaml("""
         title: Test
         status: test
@@ -906,9 +904,9 @@ def test_clickdetect_output_is_yaml_list(backend: ClickhouseBackend):
                 fieldA: value
             condition: sel
     """)
-    raw = backend.convert(rule, "clickdetect")
+    raw = backend.convert(rule, "clickdetect")[0]
     parsed = yaml.safe_load(raw)
-    assert isinstance(parsed, list)
+    assert isinstance(parsed, dict)
 
 
 # ==================== Correlation Rules ====================
@@ -1269,9 +1267,7 @@ def test_in_expression_all_plain_values(backend: ClickhouseBackend):
                         - val3
                 condition: sel
         """)
-    ) == [
-        "SELECT * FROM logs WHERE fieldA IN ('val1', 'val2', 'val3')"
-    ]
+    ) == ["SELECT * FROM logs WHERE fieldA IN ('val1', 'val2', 'val3')"]
 
 
 # ==================== All + Startswith / Endswith ====================
@@ -1293,9 +1289,7 @@ def test_all_startswith_modifier(backend: ClickhouseBackend):
                         - pow
                 condition: sel
         """)
-    ) == [
-        "SELECT * FROM logs WHERE fieldA ILIKE 'cmd%' AND fieldA ILIKE 'pow%'"
-    ]
+    ) == ["SELECT * FROM logs WHERE fieldA ILIKE 'cmd%' AND fieldA ILIKE 'pow%'"]
 
 
 def test_all_endswith_modifier(backend: ClickhouseBackend):
@@ -1313,9 +1307,7 @@ def test_all_endswith_modifier(backend: ClickhouseBackend):
                         - .dll
                 condition: sel
         """)
-    ) == [
-        "SELECT * FROM logs WHERE fieldA ILIKE '%.exe' AND fieldA ILIKE '%.dll'"
-    ]
+    ) == ["SELECT * FROM logs WHERE fieldA ILIKE '%.exe' AND fieldA ILIKE '%.dll'"]
 
 
 # ==================== Correlation: Temporal Ordered ====================
@@ -1358,7 +1350,9 @@ def test_correlation_temporal_ordered(backend: ClickhouseBackend):
                 - UserName
     """)
     result = backend.convert(rules)[0]
-    assert "arrayStringConcat(groupArray(sigma_rule_id), ',') AS rule_sequence" in result
+    assert (
+        "arrayStringConcat(groupArray(sigma_rule_id), ',') AS rule_sequence" in result
+    )
     assert "uniqExact(sigma_rule_id) AS rule_count" in result
     assert "min(timestamp) AS first_event" in result
     assert "max(timestamp) AS last_event" in result
@@ -1446,9 +1440,19 @@ def test_clickdetect_required_fields(backend: ClickhouseBackend):
                 fieldA: value
             condition: sel
     """)
-    result = yaml.safe_load(backend.convert(rule, "clickdetect"))
-    r = result[0]
-    for field in ("id", "name", "level", "size", "active", "author", "group", "tags", "rule"):
+    result = yaml.safe_load(backend.convert(rule, "clickdetect")[0])
+    r = result
+    for field in (
+        "id",
+        "name",
+        "level",
+        "size",
+        "active",
+        "author",
+        "group",
+        "tags",
+        "rule",
+    ):
         assert field in r, f"Missing required field: {field}"
 
 
@@ -1465,5 +1469,5 @@ def test_clickdetect_rule_contains_sql(backend: ClickhouseBackend):
                 fieldA: value
             condition: sel
     """)
-    result = yaml.safe_load(backend.convert(rule, "clickdetect"))
-    assert result[0]["rule"].startswith("SELECT * FROM logs WHERE")
+    result = yaml.safe_load(backend.convert(rule, "clickdetect")[0])
+    assert result["rule"].startswith("SELECT * FROM logs WHERE")

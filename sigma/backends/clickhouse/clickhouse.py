@@ -494,14 +494,17 @@ class ClickhouseBackend(TextQueryBackend):
             "rule": sql_query,
         }
 
-    def finalize_output_clickdetect(self, queries: List[Dict]) -> str:
-        return yaml.dump(
-            list(queries),
-            default_flow_style=False,
-            allow_unicode=True,
-            sort_keys=False,
-            width=None
-        )
+    def finalize_output_clickdetect(self, queries: List[Dict]) -> list[str]:
+        return [
+            yaml.dump(
+                q,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+                width=float("inf"),
+            )
+            for q in queries
+        ]
 
     def convert_condition_val_str(
         self, cond: ConditionValueExpression, state: ConversionState
