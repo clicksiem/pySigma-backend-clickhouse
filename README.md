@@ -4,7 +4,7 @@ This is the Clickhouse backend for pySigma. It provides the package `sigma.backe
 
 It supports the following output formats for Sigma rules:
 * `default`: plain clickhouse SQL querie
-* `clicksiem`: rule format for [clickdetect](https://github.com/clicksiem/clickdetect)
+* `clickdetect`: rule format for [clickdetect](https://github.com/clicksiem/clickdetect)
 
 # Thanks
 
