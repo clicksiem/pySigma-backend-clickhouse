@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.0] - 2026-05-23
+
+### 🐛 Bug Fixes
+
+- [**breaking**] Clickdetect output production ready by @souzomain
+
+### 🔧 Other changes
+
+- *(other)* Add output `clickdetect` to readme by @souzomain
+
 ## [0.3.4] - 2026-05-23
 
 ### 🐛 Bug Fixes
