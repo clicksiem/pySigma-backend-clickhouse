@@ -354,31 +354,31 @@ name = "pysigma-backend-clickhouse"
 version = "0.3.3"
 source = { editable = "." }
 dependencies = [
-    { name = "coverage" },
     { name = "pysigma" },
-    { name = "pytest-cov" },
     { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "coverage" },
     { name = "git-cliff" },
     { name = "pytest" },
+    { name = "pytest-cov" },
     { name = "sigma-cli" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "coverage", specifier = ">=7.14.0" },
     { name = "pysigma", specifier = ">=1.0.0" },
-    { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "coverage", specifier = ">=7.14.0" },
     { name = "git-cliff", specifier = ">=2.13.1" },
     { name = "pytest", specifier = ">=9.0.3" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "sigma-cli", specifier = ">=3.0.2" },
 ]
 

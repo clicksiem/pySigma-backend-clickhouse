@@ -5,9 +5,7 @@ description = "Clickhouse backend for sigma"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "coverage>=7.14.0",
     "pysigma>=1.0.0",
-    "pytest-cov>=7.1.0",
     "pyyaml>=6.0",
 ]
 authors = [
@@ -31,6 +29,6 @@ dev = [
     "git-cliff>=2.13.1",
     "pytest>=9.0.3",
     "sigma-cli>=3.0.2",
+    "pytest-cov>=7.1.0",
+    "coverage>=7.14.0",
 ]
-
-
