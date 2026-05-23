@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.4] - 2026-05-23
+
+### 🐛 Bug Fixes
+
+- Fix yaml dump width to prevent break line by @souzomain
+
 ## [0.3.3] - 2026-05-22
 
 ### 🐛 Bug Fixes
