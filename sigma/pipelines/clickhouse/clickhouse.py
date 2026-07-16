@@ -24,7 +24,7 @@ def clickhouse_clicksiem_pipeline() -> ProcessingPipeline:
         priority=20,
         items=[
             ProcessingItem(
-                identifier="clickhouse_wazuh_fieldmapping",
+                identifier="clicksiem_mapping",
                 transformation=FieldMappingTransformation(clicksiem_mapping),
             )
         ],

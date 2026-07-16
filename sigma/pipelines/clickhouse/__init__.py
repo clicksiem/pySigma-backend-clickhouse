@@ -1,9 +1,9 @@
-from .clickhouse import clickhouse_wazuh_pipeline
+from .clickhouse import clickhouse_clicksiem_pipeline
 
 __all__ = (
-    'clickhouse_wazuh_pipeline',
+    'clickhouse_clicksiem_pipeline',
 )
 
 pipelines = {
-    'clickhouse_wazuh_pipeline': clickhouse_wazuh_pipeline
+    'clickhouse_clicksiem_pipeline': clickhouse_clicksiem_pipeline
 }
