@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.1] - 2026-07-16
+
+### 🐛 Bug Fixes
+
+- Fix broken pipeline import
+- Fix broken pipeline import - sigmacli import by @souzomain
+
+## New Contributors
+
+* @ made their first contribution
 ## [1.0.0] - 2026-05-23
 
 ### 🐛 Bug Fixes
