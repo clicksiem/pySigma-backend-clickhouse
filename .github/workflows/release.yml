@@ -58,7 +58,7 @@ jobs:
         run: uv run pytest
 
   release:
-    needs: check
+    needs: [check, test]
     if: needs.check.outputs.version != ''
     runs-on: ubuntu-latest
     concurrency:
