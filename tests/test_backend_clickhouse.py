@@ -2,7 +2,7 @@ import yaml
 import pytest
 from sigma.collection import SigmaCollection
 from sigma.backends.clickhouse import ClickhouseBackend
-
+from sigma.processing.pipeline import ProcessingPipeline
 
 @pytest.fixture
 def backend():
@@ -817,8 +817,7 @@ def test_fts_keywords_single_quot_escape(backend: ClickhouseBackend):
 
 
 def test_custom_table():
-    backend = ClickhouseBackend()
-    backend.table = "wazuh_alerts_dist"
+    backend = ClickhouseBackend(table_name = "wazuh_alerts_dist")
     result = backend.convert(
         SigmaCollection.from_yaml("""
             title: Test
@@ -834,6 +833,66 @@ def test_custom_table():
     )
     assert result == ["SELECT * FROM wazuh_alerts_dist WHERE fieldA='valueA'"]
 
+# ==================== Set Table Name via Pipeline ====================
+
+@pytest.fixture
+def backendWithSetStatePipeline():
+    pipeline = ProcessingPipeline.from_yaml("""
+name: index_state_pipeline
+transformations:
+  - id: set_index_security
+    type: set_state
+    key: table
+    val: sysmon_proc_creation
+    rule_conditions:
+      - type: logsource
+        product: test_product
+        category: test_category
+    """)
+    return ClickhouseBackend(processing_pipeline=pipeline)
+
+def test_tablename_via_pipeline(backendWithSetStatePipeline: ClickhouseBackend):
+    assert backendWithSetStatePipeline.convert(
+        SigmaCollection.from_yaml("""
+            title: Test
+            status: test
+            logsource:
+                category: test_category
+                product: test_product
+            detection:
+                sel:
+                    fieldA|all|endswith:
+                        - .exe
+                        - .dll
+                condition: sel
+        """)
+    ) == ["SELECT * FROM sysmon_proc_creation WHERE fieldA ILIKE '%.exe' AND fieldA ILIKE '%.dll'"]
+
+def test_correlation_tablename_via_pipeline(backendWithSetStatePipeline: ClickhouseBackend):
+    rules = SigmaCollection.from_yaml("""
+        title: Base Rule
+        name: base_rule
+        status: test
+        logsource:
+            category: test_category
+            product: test_product
+        detection:
+            sel:
+                EventID: 1234
+            condition: sel
+---
+        title: Event Count Correlation
+        status: test
+        correlation:
+            type: event_count
+            rules: base_rule
+            timespan: 5m
+            condition:
+                gte: 10
+    """)
+    assert backendWithSetStatePipeline.convert(rules) == [
+        "SELECT *, count(*) AS event_count FROM (SELECT * FROM sysmon_proc_creation WHERE EventID=1234) AS subquery HAVING event_count >= 10"
+    ]
 
 # ==================== ClickDetect Output Format ====================
 

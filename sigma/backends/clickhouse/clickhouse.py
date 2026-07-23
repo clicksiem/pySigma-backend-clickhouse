@@ -1,6 +1,9 @@
 from sigma.conversion.deferred import DeferredQueryExpression
 from sigma.conversion.state import ConversionState
-from sigma.exceptions import SigmaFeatureNotSupportedByBackendError
+from sigma.exceptions import (
+    SigmaFeatureNotSupportedByBackendError,
+    SigmaConfigurationError,
+)
 from sigma.processing.pipeline import ProcessingPipeline
 from sigma.rule import SigmaRule
 from sigma.conversion.base import TextQueryBackend
@@ -295,7 +298,6 @@ class ClickhouseBackend(TextQueryBackend):
     # unbound_value_str_expression: ClassVar[Optional[str]] = "ILIKE '%{value}%'"
     # unbound_value_num_expression: ClassVar[Optional[str]] = "ILIKE '%{value}%'"
 
-    table: str = ""
     full_log: Optional[str]
     timestamp_field: str = "timestamp"
 
@@ -307,7 +309,7 @@ class ClickhouseBackend(TextQueryBackend):
         "high": 8,
         "critical": 10,
     }
-
+ 
     def __init__(
         self,
         processing_pipeline: Optional[ProcessingPipeline] = None,
@@ -317,8 +319,15 @@ class ClickhouseBackend(TextQueryBackend):
         **kwargs,
     ):
         super().__init__(processing_pipeline, collect_errors, **kwargs)
-        self.table = table_name
         self.full_log = full_log_column
+        self.state_defaults = {"table": table_name}
+
+    def _resolve_table(self, processing_state: dict) -> str:
+        table = processing_state.get("table", self.state_defaults["table"])
+        return table
+
+    def get_table(self, state: ConversionState) -> str:
+        return self._resolve_table(state.processing_state)
 
     def convert_correlation_rule_from_template(
         self,
@@ -351,6 +360,10 @@ class ClickhouseBackend(TextQueryBackend):
             )
 
         search = self.convert_correlation_search(rule)
+        # Correlation search templates hardcode `FROM logs`; substitute the
+        # per-rule/pipeline table (state populated by apply() in convert_correlation_rule).
+        table = self._resolve_table(self.last_processing_pipeline.state)
+        search = search.replace("FROM logs WHERE", f"FROM {table} WHERE")
 
         if rule.group_by:
             select_fields = ", ".join(
@@ -463,7 +476,7 @@ class ClickhouseBackend(TextQueryBackend):
     ) -> Any:
         if isinstance(rule, SigmaCorrelationRule):
             return query
-        return f"SELECT * FROM {self.table} WHERE {query}"
+        return f"SELECT * FROM {self.get_table(state)} WHERE {query}"
 
     def finalize_query_clickdetect(
         self,
@@ -475,7 +488,7 @@ class ClickhouseBackend(TextQueryBackend):
         if isinstance(rule, SigmaCorrelationRule):
             sql_query = query
         else:
-            sql_query = f"SELECT * FROM {self.table} WHERE {query}"
+            sql_query = f"SELECT * FROM {self.get_table(state)} WHERE {query}"
 
         level_name = rule.level.name.lower() if rule.level else "informational"
         level_score = self._level_map.get(level_name, 0)
