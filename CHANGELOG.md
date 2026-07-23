@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0] - 2026-07-23
+
+### 🚀 Features
+
+- Inject tablename via pipelines
+
 ## [1.0.1] - 2026-07-16
 
 ### 🐛 Bug Fixes
