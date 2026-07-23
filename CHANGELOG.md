@@ -4,18 +4,17 @@
 
 ### 🚀 Features
 
-- Inject tablename via pipelines
+- Inject tablename via pipelines by @pH-T
 
 ## [1.0.1] - 2026-07-16
 
 ### 🐛 Bug Fixes
 
-- Fix broken pipeline import
-- Fix broken pipeline import - sigmacli import by @souzomain
+- Fix broken pipeline import by @pH-T
 
 ## New Contributors
 
-* @ made their first contribution
+* @pH-T @ made their first contribution
 ## [1.0.0] - 2026-05-23
 
 ### 🐛 Bug Fixes
