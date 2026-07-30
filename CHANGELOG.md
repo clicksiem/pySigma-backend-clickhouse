@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.1.0] - 2026-07-30
+
+### 🚀 Features
+
+- [**breaking**] Happy release by @souzomain
+- Add IN operations for clickhouse sigma by @souzomain
+- Add optional FTS using clickhouse function `hasToken` by @souzomain
+- Inject tablename via pipelines
+
+### 🐛 Bug Fixes
+
+- Update clickhouse pysigma structure by @souzomain
+- Ci fix by @souzomain
+- *(deps)* Downgrade pysigma to 1.0.0, others packages uses pysigma 1.0.0 instead 1.3.x and cause conflicts by @souzomain
+- Add string quote escape by @souzomain
+- Use `convert_value_str` instead hardcoded replace by @souzomain
+- Fix yaml dump width to prevent break line by @souzomain
+- [**breaking**] Clickdetect output production ready by @souzomain
+- Fix broken pipeline import
+- Fix broken pipeline import - sigmacli import by @souzomain
+- Escaping for match and i/like
+
+### 🔧 Other changes
+
+- *(other)* Update readme by @souzomain
+- *(other)* Update variables types to fix lsp issues by @souzomain
+- *(other)* Add __init__.py to configure backend variables like `table` and `full_log` column by @souzomain
+- *(other)* Remove unused function by @souzomain
+- *(other)* Add base clicksiem pipeline by @souzomain
+- *(other)* Add output `clickdetect` to readme by @souzomain
+
+## New Contributors
+
+* @pH-T made their first contribution
+* @ made their first contribution
+* @souzomain made their first contribution
+* @github-actions[bot] made their first contribution
 ## [1.1.0] - 2026-07-23
 
 ### 🚀 Features
