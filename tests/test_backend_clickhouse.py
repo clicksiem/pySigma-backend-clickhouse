@@ -175,7 +175,7 @@ def test_startswith_with_escaped_wildcard(backend: ClickhouseBackend):
                     fieldA|startswith: wildcard%value
                 condition: sel
         """)
-    ) == ["SELECT * FROM logs WHERE fieldA ILIKE 'wildcard\\%value%'"]
+    ) == ["SELECT * FROM logs WHERE fieldA ILIKE 'wildcard\\\\%value%'"]
 
 
 def test_endswith_with_escaped_wildcard(backend: ClickhouseBackend):
@@ -191,7 +191,7 @@ def test_endswith_with_escaped_wildcard(backend: ClickhouseBackend):
                     fieldA|endswith: wildcard%value
                 condition: sel
         """)
-    ) == ["SELECT * FROM logs WHERE fieldA ILIKE '%wildcard\\%value'"]
+    ) == ["SELECT * FROM logs WHERE fieldA ILIKE '%wildcard\\\\%value'"]
 
 
 def test_contains_with_escaped_wildcard(backend: ClickhouseBackend):
@@ -207,7 +207,7 @@ def test_contains_with_escaped_wildcard(backend: ClickhouseBackend):
                     fieldA|contains: wildcard%value
                 condition: sel
         """)
-    ) == ["SELECT * FROM logs WHERE fieldA ILIKE '%wildcard\\%value%'"]
+    ) == ["SELECT * FROM logs WHERE fieldA ILIKE '%wildcard\\\\%value%'"]
 
 
 def test_wildcard_value_percent_and_underscore(backend: ClickhouseBackend):
@@ -226,7 +226,7 @@ def test_wildcard_value_percent_and_underscore(backend: ClickhouseBackend):
                 condition: sel
         """)
     ) == [
-        "SELECT * FROM logs WHERE fieldA ILIKE 'wildcard\\%value' AND fieldB ILIKE 'wildcard\\_value'"
+        "SELECT * FROM logs WHERE fieldA ILIKE 'wildcard\\\\%value' AND fieldB ILIKE 'wildcard\\\\_value'"
     ]
 
 
@@ -245,6 +245,26 @@ def test_value_with_single_quote(backend: ClickhouseBackend):
                 condition: sel
         """)
     ) == ["SELECT * FROM logs WHERE fieldA='it''s a value'"]
+
+
+def test_backslash_in_path_escaped_for_sql_and_like_layers(
+    backend: ClickhouseBackend,
+):
+    # A literal backslash must survive both the SQL literal parser and the LIKE
+    # pattern parser, so it needs four backslashes in the emitted SQL literal.
+    assert backend.convert(
+        SigmaCollection.from_yaml(r"""
+            title: Test
+            status: test
+            logsource:
+                category: test_category
+                product: test_product
+            detection:
+                sel:
+                    Image|endswith: '\regedit.exe'
+                condition: sel
+        """)
+    ) == [r"SELECT * FROM logs WHERE Image ILIKE '%\\\\regedit.exe'"]
 
 
 # ==================== All Modifier ====================
@@ -358,6 +378,41 @@ def test_regex(backend: ClickhouseBackend):
                 condition: sel
         """)
     ) == ["SELECT * FROM logs WHERE match(fieldA, 'foo.*bar') AND fieldB='foo'"]
+
+
+def test_regex_backslash_escaped_for_sql_literal(backend: ClickhouseBackend):
+    # Backslash must be doubled so ClickHouse's SQL literal parser passes a
+    # literal backslash to re2 instead of eating it (else "missing ]").
+    assert backend.convert(
+        SigmaCollection.from_yaml(r"""
+            title: Test
+            status: test
+            logsource:
+                category: test_category
+                product: test_product
+            detection:
+                sel:
+                    fieldA|re: ':[^ \\]'
+                condition: sel
+        """)
+    ) == [r"SELECT * FROM logs WHERE match(fieldA, ':[^ \\\\]')"]
+
+
+def test_regex_single_quote_escaped_for_sql_literal(backend: ClickhouseBackend):
+    # A quote in the regex would close the SQL literal early; double it.
+    assert backend.convert(
+        SigmaCollection.from_yaml(r"""
+            title: Test
+            status: test
+            logsource:
+                category: test_category
+                product: test_product
+            detection:
+                sel:
+                    fieldA|re: "it's"
+                condition: sel
+        """)
+    ) == ["SELECT * FROM logs WHERE match(fieldA, 'it''s')"]
 
 
 def test_regex_case_insensitive_flag(backend: ClickhouseBackend):
@@ -1530,3 +1585,34 @@ def test_clickdetect_rule_contains_sql(backend: ClickhouseBackend):
     """)
     result = yaml.safe_load(backend.convert(rule, "clickdetect")[0])
     assert result["rule"].startswith("SELECT * FROM logs WHERE")
+
+
+def test_certutil_decode_rule(backend: ClickhouseBackend):
+    """Real-world rule: backslash path escaping + windash dash variants + exact match."""
+    rule = r"""
+        title: File Decoded From Base64/Hex Via Certutil.EXE
+        id: cc9cbe82-7bc0-4ef5-bc23-bbfb83947be7
+        status: test
+        logsource:
+            category: process_creation
+            product: windows
+        detection:
+            selection_img:
+                - Image|endswith: '\certutil.exe'
+                - OriginalFileName: 'CertUtil.exe'
+            selection_cli:
+                CommandLine|contains|windash:
+                    - '-decode '
+                    - '-decodehex '
+            condition: all of selection_*
+        level: high
+    """
+    assert backend.convert(SigmaCollection.from_yaml(rule)) == [
+        r"SELECT * FROM logs WHERE (Image ILIKE '%\\\\certutil.exe' "
+        "OR OriginalFileName='CertUtil.exe') AND ("
+        "CommandLine ILIKE '%-decode %' OR CommandLine ILIKE '%/decode %' "
+        "OR CommandLine ILIKE '%–decode %' OR CommandLine ILIKE '%—decode %' "
+        "OR CommandLine ILIKE '%―decode %' OR CommandLine ILIKE '%-decodehex %' "
+        "OR CommandLine ILIKE '%/decodehex %' OR CommandLine ILIKE '%–decodehex %' "
+        "OR CommandLine ILIKE '%—decodehex %' OR CommandLine ILIKE '%―decodehex %')"
+    ]
