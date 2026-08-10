@@ -6,7 +6,7 @@
 
 - Escaping for match and i/like
 - Use raw string in convert_value_re docstring to avoid SyntaxWarning by @souzomain
-- Merge pull request #7 from clicksiem/fix/clickhouse-escaping by @souzomain
+- Merge pull request #7 from clicksiem/fix/clickhouse-escaping by @pH-T
 
 ## [1.1.0] - 2026-07-23
 
@@ -23,6 +23,7 @@
 ## New Contributors
 
 * @pH-T @ made their first contribution
+
 ## [1.0.0] - 2026-05-23
 
 ### 🐛 Bug Fixes
