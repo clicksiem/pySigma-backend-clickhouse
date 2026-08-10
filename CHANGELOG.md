@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1] - 2026-08-10
+
+### 🐛 Bug Fixes
+
+- Escaping for match and i/like
+- Use raw string in convert_value_re docstring to avoid SyntaxWarning by @souzomain
+- Merge pull request #7 from clicksiem/fix/clickhouse-escaping by @souzomain
+
 ## [1.1.0] - 2026-07-23
 
 ### 🚀 Features
