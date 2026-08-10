@@ -414,6 +414,18 @@ class ClickhouseBackend(TextQueryBackend):
         else:
             return converted
 
+    def convert_value_re(
+        self, r, state: ConversionState
+    ) -> Union[str, DeferredQueryExpression]:
+        r"""Escape a regex for a match() SQL string literal.
+
+        The SQL literal parser eats one backslash layer before re2: '[^ \\]'
+        reaches re2 as [^ \] -> escaped ] -> "missing ]". Double backslashes,
+        then double quotes for the enclosing '...'.
+        """
+        regex = super().convert_value_re(r, state)
+        return regex.replace("\\", "\\\\").replace("'", "''")
+
     def convert_condition_field_eq_val_str(
         self, cond: ConditionFieldEqualsValueExpression, state: ConversionState
     ) -> Union[str, DeferredQueryExpression]:
@@ -458,9 +470,18 @@ class ClickhouseBackend(TextQueryBackend):
                 value = cond.value
                 remove_quote = False
 
+            converted = self.convert_value_str(value, state, no_quote=remove_quote)
+            # LIKE/ILIKE patterns cross two backslash-eating layers: the SQL literal
+            # parser and the LIKE parser. convert_value_str escapes only for LIKE, so a
+            # literal '\' or escaped wildcard (\%, \_) loses its backslash to the SQL
+            # layer -> silent over-match. Double again for the SQL layer. The '=' branch
+            # (remove_quote False) has no LIKE layer and keeps single escaping.
+            if remove_quote:
+                converted = converted.replace("\\", "\\\\")
+
             return expr.format(
                 field=self.escape_and_quote_field(cond.field),
-                value=self.convert_value_str(value, state, no_quote=remove_quote),
+                value=converted,
             )
         except TypeError:  # pragma: no cover
             raise NotImplementedError(
