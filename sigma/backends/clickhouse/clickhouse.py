@@ -417,7 +417,7 @@ class ClickhouseBackend(TextQueryBackend):
     def convert_value_re(
         self, r, state: ConversionState
     ) -> Union[str, DeferredQueryExpression]:
-        """Escape a regex for a match() SQL string literal.
+        r"""Escape a regex for a match() SQL string literal.
 
         The SQL literal parser eats one backslash layer before re2: '[^ \\]'
         reaches re2 as [^ \] -> escaped ] -> "missing ]". Double backslashes,
