@@ -22,7 +22,7 @@
 
 ## New Contributors
 
-* @pH-T @ made their first contribution
+* @pH-T made their first contribution
 
 ## [1.0.0] - 2026-05-23
 
